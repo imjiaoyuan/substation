@@ -1,0 +1,7 @@
+name = "sub2singbox"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# TOKEN = "改成你自己的访问令牌"
+# SUB_URL = "改成你的订阅链接（也可不配，请求时用 ?url= 传入）"
