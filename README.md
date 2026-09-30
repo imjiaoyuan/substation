@@ -1,10 +1,10 @@
-# sub2singbox
+# sbsub
 
 通用订阅 → sing-box 配置转换的 Cloudflare Worker。部署一次，SFA 里填 URL 自动更新；规则用 MetaCubeX / anti-ad 的远程 rule-set（24h 自动刷新），节点配置在 SFA 里点“检查更新”即可。
 
 ## 部署（Cloudflare 网页，5 分钟）
 
-1. GitHub 登录 [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages → Create → Workers → Create Worker**，随便起个名（如 `sub2singbox`）→ Deploy
+1. GitHub 登录 [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages → Create → Workers → Create Worker**，随便起个名（如 `sbsub`）→ Deploy
 2. 进入该 Worker → **Edit code**：全选删掉示例代码，把 `worker.js` 内容粘贴进去 → **Deploy**
 3. **Settings → Variables and Secrets** 添加：
    - `SUB_URL`（你的订阅链接，自用推荐）
