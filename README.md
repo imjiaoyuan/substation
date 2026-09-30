@@ -2,22 +2,27 @@
 
 订阅转换网站，跑在 Cloudflare Workers 上。导入 GitHub 仓库一键部署，打开网页粘贴订阅 → 生成对应内核可直接用的链接或配置，无需任何环境变量。
 
-支持三种输出目标：
+支持七种输出目标：
 
 | 目标 | 产物 | 用法 |
 |---|---|---|
 | **sing-box**（默认） | Remote 订阅链接 `?url=…`，1.14 格式 | 填进 SFA（sing-box for Android），之后自动更新 |
 | **sing-box 旧版** | `?url=…&v=1.13`，1.11–1.13 兼容格式 | 老版本 sing-box / SFA |
 | **Clash / Mihomo** | `?t=clash`，完整 YAML（含 .mrs rule-set） | `proxy-providers` 填链接，或直接下载整份配置 |
+| **Clash 仅节点** | `?t=clash&proxies=1`，只出 `proxies:` 节 | 已有配置的 `proxy-providers` 引用（`type: http` + `health-check`，无需 override） |
 | **dae** | `?t=dae`，完整 dae 配置（订阅走签名 `/fetch` 链接） | 存为 `/etc/dae/config.d/substation.dae` 后 reload |
+| **Surge / Surfboard** | `?t=surge`，完整 .conf（`#!MANAGED-CONFIG` 托管，blackmatrix7 规则集） | Surge 「从 URL 安装」；Surfboard 同一语法 |
+| **Quantumult X** | `?t=qx`，完整 conf（`[filter_remote]` 规则引用） | QX 「配置文件 → 远程配置」或 iCloud 导入 |
+| **URI 列表** | `?t=uri`，标准 base64 分享链接列表 | v2rayN / v2rayNG / Shadowrocket / Loon / NekoBox / Streisand 等通用 |
 
 ## 功能
 
 - **网页界面**：粘贴订阅 → 生成链接/配置，一键复制、在线预览节点/分组/流量；自动适配系统深浅色
 - **面板原生配置清洗**：带 sing-box UA 拉订阅，面板返回的 JSON 自动去掉 `//` 注释、适配目标版本字段（`store_rdrc`→`store_dns`、`download_detour`→`http_clients`、新旧 DNS server 格式互转）
 - **URI 列表解析**：base64 / 明文订阅自动识别，支持 `ss` / `vmess` / `vless`(含 reality) / `trojan` / `hysteria2` / `tuic` / `anytls`
-- **完整配置生成**（URI 模式）：分组（节点选择 / 自动选择(urltest) / 流媒体 / AI / 加密货币 / 电报 / 直连）+ 分流 + FakeIP + clash_api + tun/mixed 双入站（dae 为 wan_proxy + 独立 DNS 段）
+- **完整配置生成**（URI 模式）：分组（节点选择 / 自动选择(urltest) / 流媒体 / AI / 加密货币 / 电报 / 直连）+ 分流 + FakeIP + clash_api + tun/mixed 双入站（dae 为 wan_proxy + 独立 DNS 段；Surge/QX 为各自策略组 + 分流段）
 - **双版本输出**：默认 sing-box 1.14 格式；`&v=1.13` 输出 1.11–1.13 兼容格式
+- **协议支持差异**：Surge 不支持 `vless`（跳过并注释说明），支持 ss/vmess/trojan/tuic-v5/hysteria2/anytls；QX 不支持 `vless`/`hysteria2`/`tuic`（跳过并注释说明），支持 ss/vmess/trojan/anytls
 - **签名订阅（dae）**：`/fetch?s=<token>`，AES-GCM 加密 + 时间戳防篡改，dae 侧用 `https-file://` 订阅（内容缓存到 persist.d，断网可起）；生成配置里不含节点明文
 
 ## 部署（Cloudflare 导入仓库，3 分钟）
@@ -37,8 +42,12 @@
 https://<worker域名>/?url=<订阅链接urlencode>            # sing-box 1.14（默认）
 https://<worker域名>/?url=<订阅链接urlencode>&v=1.13      # sing-box 1.11–1.13
 https://<worker域名>/?url=<订阅链接urlencode>&t=clash     # Clash/Mihomo YAML
+https://<worker域名>/?url=<订阅链接urlencode>&t=clash&proxies=1  # Clash 仅 proxies 节（proxy-providers 用）
 https://<worker域名>/?url=<订阅链接urlencode>&t=dae       # dae 配置
 https://<worker域名>/?url=<订阅链接urlencode>&t=dae&static=1   # dae，节点直接内联（不走 /fetch）
+https://<worker域名>/?url=<订阅链接urlencode>&t=surge     # Surge / Surfboard .conf
+https://<worker域名>/?url=<订阅链接urlencode>&t=qx        # Quantumult X conf
+https://<worker域名>/?url=<订阅链接urlencode>&t=uri       # base64 分享链接列表（v2rayN/NG、Shadowrocket、Loon 等）
 ```
 
 dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.d/*`），`systemctl reload dae` 生效。
@@ -48,7 +57,11 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 
 ## 分流规则（URI 模式生成的配置；全部远程规则集，内核定期自动更新）
 
-规则仓库用 star 最多、持续维护的 [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat)（5.3k★，每日更新）：
+规则仓库：sing-box / clash 用 [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat)（5.3k★，每日更新）；**Surge / QX 用 [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script)（17k★）**——两者没有二进制规则格式（.srs/.mrs），改用其 .list 规则集，分流策略与上表一致，差异如下：
+
+- Surge 直连域名主集用 `ChinaMax_Domain`（DOMAIN-SET，11 万行）+ `ChinaMax`（含 IP 段，`no-resolve`），QX 用 `ChinaMaxNoIP`（同源）；国内 AI（deepseek/kimi/百川等）已全在主集里，无需单独规则
+- 国外兜底域名集：Surge 用 `Global`，QX 用 `Proxy`（同源仓库的不同命名）
+- AI 组在 Surge/QX 拆成 OpenAI / Claude / Gemini / Copilot 四个规则集（meta-rules-dat 是合在一起的 `category-ai-chat-!cn`，blackmatrix7 没有对应单集）
 
 | 内容 | sing-box (.srs) | clash (.mrs) | dae (geosite/geoip) |
 |---|---|---|---|
@@ -72,7 +85,7 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 匹配优先级：`局域网直连 → 广告 REJECT → 国内直连（含国内 AI/测速/游戏/下载/三大家在华域名）→ 流媒体/AI/加密货币/电报 → 国外代理 → 兜底`。
 DNS（sing-box/clash）：国内域名走阿里 DoH 直连解析，其余走 Google DoH 经代理解析，FakeIP 收尾。
 
-> 规则集均为远程源，默认都从 `raw.githubusercontent.com` 拉（sing-box 22 个 / clash 21 个）。
+> 规则集均为远程源，默认都从 `raw.githubusercontent.com` 拉（sing-box 22 个 / clash 21 个 / surge 21 个 / qx 20 个）。
 > 首次加载需联网下载，之后按 24h 缓存；国内直连拉 GitHub 可能失败，拉空的规则集会退化成
 > “该分类不匹配 → 落到兜底”，不会报错。拉不动的话自行套代理/换镜像。
 
@@ -93,21 +106,27 @@ DNS（sing-box/clash）：国内域名走阿里 DoH 直连解析，其余走 Goo
 仓库不再带测试脚本，改用手动三内核校验（产物需自备一份 URI 订阅）：
 
 ```bash
-# 生成四份产物（需自备 /tmp/sub.txt：base64 或明文 URI 订阅，一行一个）
+# 生成七份产物（需自备 /tmp/sub.txt：base64 或明文 URI 订阅，一行一个）
 node --input-type=module -e "
 import {readFileSync,writeFileSync} from 'fs';
 const m = await import('./worker.js');
 const uri = readFileSync('/tmp/sub.txt','utf8');
 writeFileSync('/tmp/c.yaml',(await m.convertTo(uri,'clash')).body);
+writeFileSync('/tmp/cp.yaml',(await m.convertTo(uri,'clash',{proxiesOnly:true})).body);
 writeFileSync('/tmp/s.json',JSON.stringify((await m.convertTo(uri,'singbox')).body));
 writeFileSync('/tmp/s13.json',JSON.stringify((await m.convertTo(uri,'singbox-legacy')).body));
 writeFileSync('/tmp/d.dae',(await m.convertTo(uri,'dae',{origin:'https://x.dev'})).body);
+writeFileSync('/tmp/surge.conf',(await m.convertTo(uri,'surge')).body);
+writeFileSync('/tmp/qx.conf',(await m.convertTo(uri,'qx')).body);
+writeFileSync('/tmp/uri.txt',(await m.convertTo(uri,'uri')).body);
 "
 
 mihomo -t -f /tmp/c.yaml
+python3 -c "import yaml;yaml.safe_load(open('/tmp/c.yaml'));yaml.safe_load(open('/tmp/cp.yaml'))"
 sing-box check -c /tmp/s.json             # 1.14
 sing-box check -c /tmp/s13.json           # 1.12/1.13（legacy）
 chmod 600 /tmp/d.dae && dae validate -c /tmp/d.dae
+surge -t /tmp/surge.conf                  # Mac 版 Surge CLI（可选）
 ```
 
 实测覆盖：`sing-box check`（1.14.2 + 1.12.4）、`mihomo -t`（v1.19.31）、`dae validate`（含
@@ -120,3 +139,5 @@ geosite 代码存在性；dae 会去 `/usr/share/dae/geosite.dat` 里逐个查�
 - [SagerNet/sing-box](https://github.com/SagerNet/sing-box) 文档：[sing-box.sagernet.org](https://sing-box.sagernet.org/)
 - [daeuniverse/dae](https://github.com/daeuniverse/dae) 文档（配置语法、`https-file` 订阅缓存）
 - [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo) 文档（rule-provider `behavior`/`format: mrs`）
+- [Surge 手册](https://manual.nssurge.com/)（策略/策略组/RULE-SET/DOMAIN-SET 语法、`#!MANAGED-CONFIG`）
+- [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script)（Surge / QuantumultX .list 规则集）

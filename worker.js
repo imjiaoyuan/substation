@@ -1,13 +1,46 @@
-// Substation · 订阅转 sing-box / Clash(Mihomo) / dae —— Cloudflare Worker
-// 输出三种目标：
+// Substation · 订阅转 sing-box / Clash(Mihomo) / dae / Surge / QuantumultX / URI 列表 —— Cloudflare Worker
+// 输出目标：
 //   singbox        sing-box 1.14+ JSON（默认）
 //   singbox-legacy sing-box 1.11–1.13 JSON（?v=1.13）
-//   clash          Clash / Mihomo YAML（?t=clash），规则用 MetaCubeX .mrs
+//   clash          Clash / Mihomo YAML（?t=clash），规则用 MetaCubeX .mrs（?t=clash&proxies=1 只出 proxies 节）
 //   dae            dae (Linux eBPF) 配置（?t=dae），远程订阅走 /fetch 签名链接（?static=1 改为内嵌节点）
+//   surge          Surge / Surfboard 配置（?t=surge），规则用 blackmatrix7 .list
+//   qx             Quantumult X 配置（?t=qx），规则用 blackmatrix7 .list（QX 版）
+//   uri            base64 分享链接列表（?t=uri），v2rayN/NG、Shadowrocket、Loon、NekoBox 等通用
 
 const SB_UA = "SFA/1.14.2 (sing-box 1.14.2; Substation)";
 const GH_RAW = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat";
 const STREAM = ["youtube", "netflix", "disney", "spotify", "tiktok"];
+// Surge / QX 用 blackmatrix7（star 最多、持续维护）；下表 tag 与上面两套对齐，路径形如 <dir>/<file>.list
+const BM7 = (flavor, dir, file) => `https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/${flavor}/${dir}${file ? "/" + file : ""}.list`;
+const BM7_RULE_SETS = [
+  { tag: "ads", surge: BM7("Surge", "Advertising", "Advertising"), qx: BM7("QuantumultX", "Advertising", "Advertising") },
+  { tag: "ai", surge: BM7("Surge", "OpenAI", "OpenAI"), qx: BM7("QuantumultX", "OpenAI", "OpenAI") },
+  { tag: "ai-claude", surge: BM7("Surge", "Claude", "Claude"), qx: BM7("QuantumultX", "Claude", "Claude") },
+  { tag: "ai-gemini", surge: BM7("Surge", "Gemini", "Gemini"), qx: BM7("QuantumultX", "Gemini", "Gemini") },
+  { tag: "ai-copilot", surge: BM7("Surge", "Copilot", "Copilot"), qx: BM7("QuantumultX", "Copilot", "Copilot") },
+  { tag: "ai-cn", surge: null, qx: null }, // blackmatrix7 无此集；国内 AI 域名已在 ChinaMax 主集里（deepseek/kimi/baichuan 各数百条）
+  { tag: "telegram-sites", surge: BM7("Surge", "Telegram", "Telegram"), qx: BM7("QuantumultX", "Telegram", "Telegram") },
+  ...STREAM.map((t) => {
+    const D = { youtube: "YouTube", netflix: "Netflix", disney: "Disney", spotify: "Spotify", tiktok: "TikTok" }[t]; // blackmatrix7 目录是驼峰
+    return { tag: t, surge: BM7("Surge", D, D), qx: BM7("QuantumultX", D, D) };
+  }),
+  { tag: "games", surge: BM7("Surge", "Game", "Game"), qx: BM7("QuantumultX", "Game", "Game") },
+  { tag: "game-download", surge: BM7("Surge", "Game/GameDownloadCN", "GameDownloadCN"), qx: BM7("QuantumultX", "Game/GameDownloadCN", "GameDownloadCN") },
+  { tag: "crypto", surge: BM7("Surge", "Cryptocurrency", "Cryptocurrency"), qx: BM7("QuantumultX", "Cryptocurrency", "Cryptocurrency") },
+  { tag: "speedtest", surge: BM7("Surge", "Speedtest", "Speedtest"), qx: BM7("QuantumultX", "Speedtest", "Speedtest") },
+  { tag: "apple-cn", surge: BM7("Surge", "Apple", "Apple"), qx: BM7("QuantumultX", "Apple", "Apple") },
+  { tag: "microsoft-cn", surge: BM7("Surge", "Microsoft", "Microsoft"), qx: BM7("QuantumultX", "Microsoft", "Microsoft") },
+  { tag: "google-cn", surge: BM7("Surge", "Google", "Google"), qx: BM7("QuantumultX", "Google", "Google") },
+  { tag: "proxy-domains", surge: BM7("Surge", "Global", "Global"), qx: BM7("QuantumultX", "Proxy", "Proxy") },
+  { tag: "cn-domains", surge: BM7("Surge", "ChinaMax", "ChinaMax_Domain"), qx: null },
+  { tag: "cn-rules", surge: BM7("Surge", "ChinaMax", "ChinaMax"), qx: BM7("QuantumultX", "ChinaMaxNoIP", "ChinaMaxNoIP") },
+  { tag: "cn-ip", surge: BM7("Surge", "ChinaIPs", "ChinaIPs"), qx: BM7("QuantumultX", "ChinaIPs", "ChinaIPs") },
+  { tag: "private-ip", surge: BM7("Surge", "Lan", "Lan"), qx: BM7("QuantumultX", "Lan", "Lan") },
+];
+// QX 的 AI 组：meta-rules-dat 的 category-ai-chat-!cn 在 blackmatrix7 拆成了 OpenAI/Claude/Gemini/Copilot
+const QX_AI_TAGS = ["ai", "ai-claude", "ai-gemini", "ai-copilot"];
+// QX 没有域名后缀集格式，cn 主集 ChinaMaxNoIP 自带 HOST 系规则（11 万行）
 // 直连补充集（除 cn-domains/cn-ip 外）：国内 AI、测速站、游戏（含外服）/游戏下载 CDN、三大家在华可用域名
 // 注：这些域名基本不在 geosite:cn / geolocation-!cn 里，不显式列出会被兜底规则送进代理
 const DIRECT_SETS = ["ai-cn", "speedtest", "games", "game-download", "apple-cn", "microsoft-cn", "google-cn"];
@@ -215,6 +248,7 @@ function uriToNode(uri) {
       server_port: +j.port, uuid: j.id, security: j.scy || "auto", alter_id: +(j.aid || 0),
     };
     if (j.tls === "tls" || j.tls === "reality") node.tls = tlsPart(j.sni || j.host, j.allowInsecure === "1" || j.verify_cert === "false");
+    if (j.tls === "reality") node.tls.reality = { enabled: true, public_key: j.pbk || "", short_id: j.sid || "" };
     if (j.net === "ws") node.transport = { type: "ws", path: j.path || "/", ...(j.host ? { headers: { Host: j.host } } : {}) };
     else if (j.net === "grpc") node.transport = { type: "grpc", service_name: j.path || "" };
     else if (j.net === "http") node.transport = { type: "http", ...(j.host ? { host: [j.host] } : {}), path: j.path || "/" };
@@ -449,7 +483,7 @@ function buildConfig(nodes, legacy) {
   return cfg;
 }
 
-// ---------- Clash / Mihomo 输出 ----------
+// ---------- Clash / Mihomo 输出（proxiesOnly=true 时只出 proxies 节，供 proxy-providers 引用） ----------
 
 function clashTransport(tr) {
   if (!tr || !tr.type) return {};
@@ -565,9 +599,10 @@ function yamlLines(obj, ind) {
   return out;
 }
 
-function buildClash(nodes) {
+function buildClash(nodes, proxiesOnly = false) {
   const tags = nodes.map((n) => n.tag);
   const proxies = nodes.map(clashNode).filter(Boolean);
+  if (proxiesOnly) return { proxies };
   return {
     "mixed-port": 7890,
     "allow-lan": false,
@@ -620,6 +655,204 @@ function buildClash(nodes) {
       "MATCH,节点选择",
     ],
   };
+}
+
+// ---------- Surge / Surfboard 输出 ----------
+// 语法来源 manual.nssurge.com；规则集用 blackmatrix7 Surge 版（.list，免策略名）。
+// 节点协议支持度：ss/vmess/trojan/tuic-v5/hysteria2/anytls，vless 不支持（跳过并在注释里标明）。
+
+function surgeKv(n) {
+  // Surge 参数值是逗号分隔的 key=value，含 , 或 = 的值必须加引号
+  const wrap = (v) => (/[=,]/.test(v) ? `"${v}"` : v);
+  const tls = n.tls?.enabled
+    ? [...(n.tls.server_name ? [`sni=${n.tls.server_name}`] : []), ...(n.tls.insecure ? ["skip-cert-verify=true"] : [])]
+    : [];
+  const tr = n.transport;
+  const ws = tr?.type === "ws"
+    ? [`ws=true`, `ws-path=${tr.path || "/"}`, ...(tr.headers?.Host ? [`ws-headers=Host:${tr.headers.Host}`] : [])]
+    : [];
+  switch (n.type) {
+    case "shadowsocks": {
+      const kv = [`encrypt-method=${n.method}`, `password=${n.password}`, "udp-relay=true"];
+      if (n.plugin === "obfs-local") {
+        const m = Object.fromEntries((n.plugin_opts || "").split(";").map((p) => p.split("=")));
+        kv.push(`obfs=${m.obfs || "http"}`, ...(m["obfs-host"] ? [`obfs-host=${m["obfs-host"]}`] : []));
+      }
+      return [`ss, ${n.server}, ${n.server_port}, ${kv.map((x) => wrap(x)).join(", ")}`];
+    }
+    case "vmess": {
+      const kv = [`username=${n.uuid}`, `encrypt-method=${n.security || "auto"}`, "vmess-aead=true", ...tls, ...ws];
+      return [`vmess, ${n.server}, ${n.server_port}, ${kv.map((x) => wrap(x)).join(", ")}`];
+    }
+    case "trojan": {
+      const kv = [`password=${n.password}`, ...tls, ...ws];
+      return [`trojan, ${n.server}, ${n.server_port}, ${kv.map((x) => wrap(x)).join(", ")}`];
+    }
+    case "hysteria2": {
+      const kv = [`password=${n.password}`, ...(n.obfs ? [`salamander-password=${n.obfs.password || ""}`] : []), ...(n.tls?.insecure ? ["skip-cert-verify=true"] : [])];
+      return [`hysteria2, ${n.server}, ${n.server_port}, ${kv.map((x) => wrap(x)).join(", ")}`];
+    }
+    case "tuic": {
+      const kv = [`uuid=${n.uuid}`, `password=${n.password}`, `alpn=h3`, ...(n.tls?.insecure ? ["skip-cert-verify=true"] : [])];
+      return [`tuic-v5, ${n.server}, ${n.server_port}, ${kv.map((x) => wrap(x)).join(", ")}`];
+    }
+    case "anytls": {
+      const kv = [`password=${n.password}`, ...tls];
+      return [`anytls, ${n.server}, ${n.server_port}, ${kv.map((x) => wrap(x)).join(", ")}`];
+    }
+    default:
+      return null;
+  }
+}
+
+// 节点名清洗：Surge 策略名不允许含 , 或（逗号是参数分隔符）
+function surgeName(tag) {
+  return tag.replace(/,/g, "，");
+}
+
+function buildSurge(nodes) {
+  const usable = nodes.map((n) => ({ n, line: surgeKv(n) })).filter((x) => x.line);
+  const dropped = nodes.length - usable.length;
+  const names = usable.map(({ n }) => surgeName(n.tag));
+  const nameOf = (n) => surgeName(n.tag);
+  const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, r.surge]));
+  const hasClude = usable.some(({ n }) => /claude/i.test(n.tag));
+  const aiSets = hasClude ? ["ai", "ai-claude"] : ["ai"];
+  const L = [];
+  L.push(`#!MANAGED-CONFIG interval=86400 strict=false`);
+  L.push(``);
+  L.push(`[General]`);
+  L.push(`loglevel = notify`);
+  L.push(`dns-server = 223.5.5.5, 119.29.29.29`);
+  L.push(`encrypted-dns-server = https://223.5.5.5/dns-query`);
+  L.push(`skip-proxy = 127.0.0.1, 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 100.64.0.0/10, localhost, *.local`);
+  L.push(`ipv6 = true`);
+  L.push(``);
+  L.push(`[Proxy]`);
+  for (const { n, line } of usable) L.push(`${nameOf(n)} = ${line}`);
+  if (dropped) L.push(`# 有 ${dropped} 个节点因协议不支持（vless 等）被跳过`);
+  L.push(``);
+  L.push(`[Proxy Group]`);
+  L.push(`节点选择 = select, 自动选择, DIRECT, ${names.join(", ")}`);
+  L.push(`自动选择 = url-test, url=http://www.gstatic.com/generate_204, interval=600, ${names.join(", ")}`);
+  for (const g of GROUPS) {
+    if (g.tag === "AI") { L.push(`AI = select, 节点选择, 自动选择, DIRECT, ${names.join(", ")}`); continue; }
+    L.push(`${g.tag} = select, 节点选择, 自动选择, DIRECT, ${names.join(", ")}`);
+  }
+  L.push(``);
+  L.push(`[Rule]`);
+  L.push(`RULE-SET,${rs["private-ip"]},DIRECT,no-resolve`);
+  L.push(`RULE-SET,${rs["ads"]},REJECT`);
+  L.push(`DOMAIN-SET,${rs["cn-domains"]},DIRECT`);
+  L.push(`RULE-SET,${rs["cn-rules"]},DIRECT,no-resolve`);
+  for (const s of DIRECT_SETS) if (rs[s]) L.push(`RULE-SET,${rs[s]},DIRECT${s === "speedtest" || s === "games" ? ",no-resolve" : ""}`);
+  for (const s of STREAM) L.push(`RULE-SET,${rs[s]},流媒体`);
+  for (const s of aiSets) L.push(`RULE-SET,${rs[s]},AI`);
+  L.push(`RULE-SET,${rs["crypto"]},加密货币`);
+  L.push(`RULE-SET,${rs["telegram-sites"]},电报`);
+  L.push(`RULE-SET,${rs["proxy-domains"]},节点选择`);
+  L.push(`GEOIP,CN,DIRECT,no-resolve`);
+  L.push(`FINAL,节点选择,dns-failed`);
+  return L.join("\n") + "\n";
+}
+
+// ---------- Quantumult X 输出 ----------
+// 语法来源 crossutility/Quantumult-X sample.conf；不支持 vless / hysteria2 / tuic（跳过并在注释里标明），
+// 也不支持 reality（vless 专属，随 vless 一起跳过）。
+
+function qxKv(n) {
+  const tr = n.transport;
+  const tlsHost = n.tls?.server_name || "";
+  switch (n.type) {
+    case "shadowsocks": {
+      const kv = [`method=${n.method}`, `password=${n.password}`, "udp-relay=true"];
+      if (n.plugin === "obfs-local") {
+        const m = Object.fromEntries((n.plugin_opts || "").split(";").map((p) => p.split("=")));
+        kv.push(`obfs=${m.obfs || "http"}`, ...(m["obfs-host"] ? [`obfs-host=${m["obfs-host"]}`] : []));
+      }
+      if (tr?.type === "ws") kv.push(n.tls?.enabled ? `obfs=wss` : `obfs=ws`, `obfs-uri=${tr.path || "/"}`, ...(tr.headers?.Host ? [`obfs-host=${tr.headers.Host}`] : []));
+      return [`shadowsocks=${n.server}:${n.server_port}, ${kv.join(", ")}`];
+    }
+    case "vmess": {
+      const kv = [`method=${n.security || "auto"}`, `password=${n.uuid}`, "aead=true"];
+      if (tr?.type === "ws") kv.push(n.tls?.enabled ? `obfs=wss` : `obfs=ws`, `obfs-uri=${tr.path || "/"}`, ...(tr.headers?.Host || tlsHost ? [`obfs-host=${tr.headers?.Host || tlsHost}`] : []));
+      else if (n.tls?.enabled) kv.push(`obfs=over-tls`, ...(tlsHost ? [`obfs-host=${tlsHost}`] : []));
+      kv.push("udp-relay=true");
+      return [`vmess=${n.server}:${n.server_port}, ${kv.join(", ")}`];
+    }
+    case "trojan": {
+      const kv = [`password=${n.password}`, "udp-relay=true"];
+      if (tr?.type === "ws") kv.push(n.tls?.enabled ? `obfs=wss` : `obfs=ws`, `obfs-uri=${tr.path || "/"}`, ...(tr.headers?.Host || tlsHost ? [`obfs-host=${tr.headers?.Host || tlsHost}`] : []));
+      else { kv.push("over-tls=true", ...(tlsHost ? [`tls-host=${tlsHost}`] : [])); }
+      return [`trojan=${n.server}:${n.server_port}, ${kv.join(", ")}`];
+    }
+    case "anytls": {
+      const kv = [`password=${n.password}`, "over-tls=true", ...(tlsHost ? [`tls-host=${tlsHost}`] : [])];
+      return [`anytls=${n.server}:${n.server_port}, ${kv.join(", ")}`];
+    }
+    default:
+      return null;
+  }
+}
+
+// QX 节点名不允许含逗号
+function qxName(tag) {
+  return tag.replace(/,/g, "，");
+}
+
+function buildQx(nodes) {
+  const usable = nodes.map((n) => ({ n, line: qxKv(n) })).filter((x) => x.line);
+  const dropped = nodes.length - usable.length;
+  const names = usable.map(({ n }) => qxName(n.tag));
+  const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, r.qx]));
+  const L = [];
+  L.push(`[general]`);
+  L.push(`server_check_url = http://www.gstatic.com/generate_204`);
+  L.push(`dns_exclusion_list = *.cmpassport.com, *.jegotrip.com.cn, *.icitymobile.mobi, id6.me`);
+  L.push(``);
+  L.push(`[dns]`);
+  L.push(`server = 223.5.5.5`);
+  L.push(`server = 119.29.29.29`);
+  L.push(`doh-server = https://223.5.5.5/dns-query, https://8.8.8.8/dns-query`);
+  L.push(``);
+  L.push(`[policy]`);
+  L.push(`static = 节点选择, 自动选择, direct, ${names.join(", ")}`);
+  L.push(`available = 自动选择, ${names.join(", ")}`);
+  for (const g of GROUPS) L.push(`static = ${g.tag}, 节点选择, 自动选择, direct, ${names.join(", ")}`);
+  L.push(``);
+  L.push(`[server_local]`);
+  for (const { n, line } of usable) L.push(`${line}, tag=${qxName(n.tag)}`);
+  if (dropped) L.push(`# 有 ${dropped} 个节点因协议不支持（vless/hysteria2/tuic）被跳过`);
+  L.push(``);
+  L.push(`[filter_remote]`);
+  const remote = (tag, policy, extra = "") => L.push(`${rs[tag]}, tag=${tag}, force-policy=${policy}${extra ? ", " + extra : ""}`);
+  remote("private-ip", "direct");
+  remote("ads", "reject");
+  remote("cn-rules", "direct");
+  for (const s of DIRECT_SETS) if (rs[s]) remote(s, "direct");
+  for (const s of STREAM) remote(s, "流媒体");
+  for (const s of QX_AI_TAGS) remote(s, "AI");
+  remote("crypto", "加密货币");
+  remote("telegram-sites", "电报");
+  remote("proxy-domains", "节点选择");
+  L.push(``);
+  L.push(`[filter_local]`);
+  L.push(`geoip, cn, direct`);
+  L.push(`final, 节点选择`);
+  return L.join("\n") + "\n";
+}
+
+// ---------- URI 列表输出（base64 分享链接，v2rayN/NG、Shadowrocket、Loon、NekoBox 等通用） ----------
+
+function b64std(s) {
+  const bin = b64enc(s); // urlsafe 无填充
+  return bin.replace(/-/g, "+").replace(/_/g, "/") + "==".slice(0, (4 - (bin.length % 4)) % 4);
+}
+
+function buildUriList(nodes) {
+  const uris = nodes.map(toShareURI).filter(Boolean);
+  if (!uris.length) throw new Error("订阅中没有可转换的节点");
+  return b64std(uris.join("\n") + "\n");
 }
 
 // ---------- dae 输出 ----------
@@ -838,7 +1071,10 @@ export async function convertTo(text, target, opts = {}) {
     nodes = uniqueTags(parseUriList(t));
   }
   if (!nodes.length) throw new Error("订阅中没有可解析的节点");
-  if (target === "clash") return { format: "yaml", body: yamlLines(buildClash(nodes), 0).join("\n") + "\n" };
+  if (target === "clash") return { format: "yaml", body: yamlLines(buildClash(nodes, opts.proxiesOnly), 0).join("\n") + "\n" };
+  if (target === "surge") return { format: "conf", body: buildSurge(nodes) };
+  if (target === "qx") return { format: "conf", body: buildQx(nodes) };
+  if (target === "uri") return { format: "text", body: buildUriList(nodes) };
   if (target === "dae") {
     const { origin = "", secret = DEFAULT_SECRET, staticNodes = false, url = null } = opts;
     let subToken = null;
@@ -910,7 +1146,7 @@ footer{margin-top:18px;font-size:12px;color:var(--faint);line-height:1.7}
 <body>
 <div class="card">
 <h1>Substation<em> ·</em> 订阅转换</h1>
-<p class="sub">粘贴机场订阅，生成 sing-box / Clash(Mihomo) / dae 可用的订阅链接或配置</p>
+<p class="sub">粘贴机场订阅，生成 sing-box / Clash(Mihomo) / dae / Surge / Quantumult X / v2rayN 等可用的订阅链接或配置</p>
 <label>订阅链接</label>
 <input id="sub" placeholder="https://...">
 <label>目标应用</label>
@@ -919,6 +1155,9 @@ footer{margin-top:18px;font-size:12px;color:var(--faint);line-height:1.7}
 <option value="sb13">sing-box 1.11 – 1.13</option>
 <option value="clash">Clash / Mihomo</option>
 <option value="dae">dae（Linux eBPF）</option>
+<option value="surge">Surge / Surfboard</option>
+<option value="qx">Quantumult X</option>
+<option value="uri">URI 列表（v2rayN/NG、Shadowrocket、Loon 等）</option>
 </select>
 <button id="genbtn" onclick="gen()">生成</button>
 <div id="out">
@@ -959,6 +1198,9 @@ function gen(){
  var u=base+'/?url='+encodeURIComponent(s);
  if(t==='sb13')u+='&v=1.13';
  else if(t==='clash')u+='&t=clash';
+ else if(t==='surge')u+='&t=surge';
+ else if(t==='qx')u+='&t=qx';
+ else if(t==='uri')u+='&t=uri';
  document.getElementById('link').textContent=u;
  document.getElementById('out').style.display='block';
  document.getElementById('daeout').style.display='none';
@@ -974,7 +1216,7 @@ function cpcfg(b){
 }
 function prev(b){
  var l=document.getElementById('link').textContent;
- if(l.indexOf('t=clash')>=0){alert('预览仅支持 sing-box 链接');return}
+ if(l.indexOf('t=clash')>=0||l.indexOf('t=surge')>=0||l.indexOf('t=qx')>=0||l.indexOf('t=uri')>=0){alert('预览仅支持 sing-box 链接');return}
  b.disabled=true;b.textContent='拉取中…';
  var p=document.getElementById('prev');p.textContent='';
  fetch(l)
@@ -1007,6 +1249,9 @@ async function fetchText(url) {
 function targetOf(t) {
   if (t === "clash" || t === "mihomo") return "clash";
   if (t === "dae") return "dae";
+  if (t === "surge" || t === "surfboard") return "surge";
+  if (t === "qx" || t === "quantumultx" || t === "quantumult-x") return "qx";
+  if (t === "uri" || t === "list" || t === "v2ray") return "uri";
   if (["1.11", "1.12", "1.13", "legacy"].includes(t)) return "singbox-legacy";
   return "singbox";
 }
@@ -1048,19 +1293,25 @@ export default {
         origin,
         secret,
         staticNodes: q.get("static") === "1",
+        proxiesOnly: q.get("proxies") === "1",
         url: target.replace(/^https-file:/, "https:"),
       });
       const contentType =
         out.format === "yaml" ? "text/yaml; charset=utf-8"
+        : out.format === "conf" ? "text/plain; charset=utf-8"
         : out.format === "dae" ? "text/plain; charset=utf-8"
+        : out.format === "text" ? "text/plain; charset=utf-8"
         : "application/json; charset=utf-8";
       const body = out.format === "singbox" ? JSON.stringify(out.body, null, 2) : out.body;
+      // 前两个是给订阅客户端显示流量/过期用的；profile-update-interval 是 Surge/QX 托管配置更新频率
+      const managed = kind === "surge" || kind === "qx" || kind === "uri";
       return new Response(body, {
         headers: {
           "content-type": contentType,
           "cache-control": "no-store",
           "access-control-allow-origin": "*",
           ...(info && kind !== "dae" ? { "subscription-userinfo": info } : {}),
+          ...(managed ? { "profile-update-interval": "24" } : {}),
         },
       });
     } catch (e) {
