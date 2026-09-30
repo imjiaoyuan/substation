@@ -296,6 +296,89 @@ function buildConfig(nodes, legacy) {
   return cfg;
 }
 
+const PAGE = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ssub · 订阅转 sing-box</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f1115;color:#e6e6e6;font:15px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.card{width:min(560px,92vw);background:#171a21;border:1px solid #262b36;border-radius:14px;padding:28px}
+h1{font-size:20px;margin:0 0 4px}.card h1 em{color:#5aa2ff;font-style:normal}
+p.sub{margin:0 0 6px;color:#8b93a3;font-size:13px}
+label{display:block;font-size:13px;color:#8b93a3;margin:14px 0 6px}
+input,select{width:100%;padding:10px 12px;border-radius:9px;border:1px solid #2c3342;background:#0f1115;color:#e6e6e6;font-size:14px}
+input:focus,select:focus{outline:none;border-color:#5aa2ff}
+.row{display:flex;gap:10px}.row>div{flex:1}
+button{margin-top:18px;width:100%;padding:11px;border:0;border-radius:9px;background:#2f6fed;color:#fff;font-size:15px;cursor:pointer}
+button.ghost{background:#222835;margin-top:10px}button:disabled{opacity:.5;cursor:default}
+#out{margin-top:4px;display:none}
+#link{word-break:break-all;background:#0f1115;border:1px solid #2c3342;border-radius:9px;padding:10px 12px;font-size:13px}
+#prev{margin-top:10px;font-size:13px;color:#8b93a3;line-height:1.8}
+.ok{color:#4ade80}.err{color:#f87171}
+footer{margin-top:18px;font-size:12px;color:#5b6472;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>ssub<em> ·</em> 订阅转 sing-box</h1>
+<p class="sub">粘贴机场订阅，生成 sing-box (SFA) 可用的 Remote 订阅链接；分流规则由 SFA 每 24h 自动更新</p>
+<label>订阅链接</label>
+<input id="sub" placeholder="https://...">
+<div class="row">
+<div><label>sing-box 版本</label>
+<select id="v"><option value="">1.14+（默认）</option><option value="1.13">1.11 – 1.13</option></select></div>
+</div>
+<button onclick="gen()">生成链接</button>
+<div id="out">
+<label>转换后的订阅链接（填进 SFA Remote）</label>
+<div id="link"></div>
+<button class="ghost" onclick="cp(this)">复制链接</button>
+<button class="ghost" onclick="prev(this)">预览节点</button>
+<div id="prev"></div>
+</div>
+<footer>预览由本 Worker 实时转换，不存储你的订阅链接。生成的链接请自用，泄露等同于泄露订阅。</footer>
+</div>
+<script>
+function gen(){
+ var s=document.getElementById('sub').value.trim();
+ if(!s){alert('先填订阅链接');return}
+ var v=document.getElementById('v').value,t=document.getElementById('tk').value.trim();
+ var u=location.origin+'/?url='+encodeURIComponent(s);
+ if(v)u+='&v='+v;
+ document.getElementById('link').textContent=u;
+ document.getElementById('out').style.display='block';
+ document.getElementById('prev').textContent='';
+}
+function cp(b){
+ var t=document.getElementById('link').textContent;
+ navigator.clipboard.writeText(t).then(function(){b.textContent='已复制 ✓';setTimeout(function(){b.textContent='复制链接'},1500)});
+}
+function prev(b){
+ b.disabled=true;b.textContent='拉取中…';
+ var p=document.getElementById('prev');p.textContent='';
+ fetch(document.getElementById('link').textContent)
+ .then(function(r){var info=r.headers.get('subscription-userinfo')||'';return r.text().then(function(t){return{ok:r.ok,status:r.status,t:t,info:info}})})
+ .then(function(o){
+  b.disabled=false;b.textContent='预览节点';
+  if(!o.ok){p.innerHTML='<span class="err">失败('+o.status+')：'+o.t.slice(0,200)+'</span>';return}
+  var j=JSON.parse(o.t),nodes=[],groups=[],pt=['shadowsocks','vmess','vless','trojan','hysteria2','tuic','anytls','hysteria','ssr','wireguard','ssh'];
+  j.outbounds.forEach(function(ob){if(pt.indexOf(ob.type)>=0)nodes.push(ob.tag);else groups.push(ob.tag)});
+  var line='<span class="ok">共 '+nodes.length+' 个节点</span>';
+  if(o.info)line+=' · '+o.info;
+  line+='<br>分组：'+groups.join(' / ');
+  line+='<br>节点：'+nodes.slice(0,5).join(' / ')+(nodes.length>5?' …':'');
+  p.innerHTML=line;
+ })
+ .catch(function(e){b.disabled=false;b.textContent='预览节点';p.innerHTML='<span class="err">'+e+'</span>'});
+}
+</script>
+</body>
+</html>`;
+
 async function fetchText(url) {
   const res = await fetch(url, { headers: { "User-Agent": SB_UA } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
@@ -318,12 +401,13 @@ export function convert(subText, legacy) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (env.TOKEN && url.searchParams.get("token") !== env.TOKEN)
-      return new Response("forbidden\n", { status: 403 });
-    const target = url.searchParams.get("url") || env.SUB_URL;
+    const q = url.searchParams;
+    if (url.pathname === "/" && ![...q.keys()].length)
+      return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
+    const target = q.get("url");
     if (!target)
-      return new Response("missing url: pass ?url=<encoded> or set SUB_URL\n", { status: 400 });
-    const legacy = ["1.11", "1.12", "1.13", "legacy"].includes(url.searchParams.get("v"));
+      return new Response("missing url: pass ?url=<encoded>\n", { status: 400 });
+    const legacy = ["1.11", "1.12", "1.13", "legacy"].includes(q.get("v"));
     try {
       const { text, info } = await fetchText(target);
       const cfg = convert(text, legacy);
@@ -331,6 +415,7 @@ export default {
         headers: {
           "content-type": "application/json; charset=utf-8",
           "cache-control": "no-store",
+          "access-control-allow-origin": "*",
           ...(info ? { "subscription-userinfo": info } : {}),
         },
       });
