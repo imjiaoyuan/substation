@@ -8,13 +8,24 @@
 const SB_UA = "SFA/1.14.2 (sing-box 1.14.2; Substation)";
 const GH_RAW = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat";
 const STREAM = ["youtube", "netflix", "disney", "spotify", "tiktok"];
+// 直连补充集（除 cn-domains/cn-ip 外）：国内 AI、测速站、国服游戏/游戏下载/加速器、三大家在华可用域名
+const DIRECT_SETS = ["ai-cn", "speedtest", "games-cn", "game-download", "apple-cn", "microsoft-cn", "google-cn"];
 const SING_RULE_SETS = [
   { tag: "ads", url: "https://anti-ad.net/anti-ad-sing-box.srs" },
   { tag: "geosite-ads", url: `${GH_RAW}/sing/geo/geosite/category-ads-all.srs` },
   { tag: "ai", url: `${GH_RAW}/sing/geo/geosite/category-ai-chat-%21cn.srs` },
+  { tag: "ai-cn", url: `${GH_RAW}/sing/geo/geosite/category-ai-cn.srs` },
   { tag: "telegram-sites", url: `${GH_RAW}/sing/geo/geosite/telegram.srs` },
   { tag: "telegram-ip", url: `${GH_RAW}/sing/geo/geoip/telegram.srs` },
   ...STREAM.map((t) => ({ tag: t, url: `${GH_RAW}/sing/geo/geosite/${t}.srs` })),
+  { tag: "games", url: `${GH_RAW}/sing/geo/geosite/category-games-%21cn.srs` },
+  { tag: "games-cn", url: `${GH_RAW}/sing/geo/geosite/category-games-cn.srs` },
+  { tag: "game-download", url: `${GH_RAW}/sing/geo/geosite/category-game-platforms-download.srs` },
+  { tag: "crypto", url: `${GH_RAW}/sing/geo/geosite/category-cryptocurrency.srs` },
+  { tag: "speedtest", url: `${GH_RAW}/sing/geo/geosite/category-speedtest.srs` },
+  { tag: "apple-cn", url: `${GH_RAW}/sing/geo/geosite/apple%40cn.srs` },
+  { tag: "microsoft-cn", url: `${GH_RAW}/sing/geo/geosite/microsoft%40cn.srs` },
+  { tag: "google-cn", url: `${GH_RAW}/sing/geo/geosite/google%40cn.srs` },
   { tag: "proxy-domains", url: `${GH_RAW}/sing/geo/geosite/geolocation-%21cn.srs` },
   { tag: "cn-domains", url: `${GH_RAW}/sing/geo/geosite/cn.srs` },
   { tag: "cn-ip", url: `${GH_RAW}/sing/geo/geoip/cn.srs` },
@@ -24,9 +35,18 @@ const SING_RULE_SETS = [
 const CLASH_RULE_SETS = [
   { tag: "ads", url: `${GH_RAW}/meta/geo/geosite/category-ads-all.mrs`, behavior: "domain" },
   { tag: "ai", url: `${GH_RAW}/meta/geo/geosite/category-ai-chat-%21cn.mrs`, behavior: "domain" },
+  { tag: "ai-cn", url: `${GH_RAW}/meta/geo/geosite/category-ai-cn.mrs`, behavior: "domain" },
   { tag: "telegram-sites", url: `${GH_RAW}/meta/geo/geosite/telegram.mrs`, behavior: "domain" },
   { tag: "telegram-ip", url: `${GH_RAW}/meta/geo/geoip/telegram.mrs`, behavior: "ipcidr" },
   ...STREAM.map((t) => ({ tag: t, url: `${GH_RAW}/meta/geo/geosite/${t}.mrs`, behavior: "domain" })),
+  { tag: "games", url: `${GH_RAW}/meta/geo/geosite/category-games-%21cn.mrs`, behavior: "domain" },
+  { tag: "games-cn", url: `${GH_RAW}/meta/geo/geosite/category-games-cn.mrs`, behavior: "domain" },
+  { tag: "game-download", url: `${GH_RAW}/meta/geo/geosite/category-game-platforms-download.mrs`, behavior: "domain" },
+  { tag: "crypto", url: `${GH_RAW}/meta/geo/geosite/category-cryptocurrency.mrs`, behavior: "domain" },
+  { tag: "speedtest", url: `${GH_RAW}/meta/geo/geosite/category-speedtest.mrs`, behavior: "domain" },
+  { tag: "apple-cn", url: `${GH_RAW}/meta/geo/geosite/apple%40cn.mrs`, behavior: "domain" },
+  { tag: "microsoft-cn", url: `${GH_RAW}/meta/geo/geosite/microsoft%40cn.mrs`, behavior: "domain" },
+  { tag: "google-cn", url: `${GH_RAW}/meta/geo/geosite/google%40cn.mrs`, behavior: "domain" },
   { tag: "proxy-domains", url: `${GH_RAW}/meta/geo/geosite/geolocation-%21cn.mrs`, behavior: "domain" },
   { tag: "cn-domains", url: `${GH_RAW}/meta/geo/geosite/cn.mrs`, behavior: "domain" },
   { tag: "cn-ip", url: `${GH_RAW}/meta/geo/geoip/cn.mrs`, behavior: "ipcidr" },
@@ -35,6 +55,8 @@ const CLASH_RULE_SETS = [
 const GROUPS = [
   { tag: "流媒体", sets: STREAM },
   { tag: "AI", sets: ["ai"] },
+  { tag: "游戏", sets: ["games"] },
+  { tag: "加密货币", sets: ["crypto"] },
   { tag: "电报", sets: ["telegram-sites", "telegram-ip"] },
 ];
 // dae 的组名用 ASCII（配置文件里是标识符）；分组用 name(keyword:) 过滤节点名。
@@ -356,7 +378,7 @@ function buildConfig(nodes, legacy) {
       rules: [
         { clash_mode: "Direct", server: "dns-direct" },
         { clash_mode: "Global", server: "dns-proxy" },
-        { rule_set: "cn-domains", server: "dns-direct" },
+        { rule_set: ["cn-domains", ...DIRECT_SETS], server: "dns-direct" },
         { query_type: ["A", "AAAA"], server: "fakeip", disable_cache: true },
       ],
       final: "dns-proxy",
@@ -383,9 +405,11 @@ function buildConfig(nodes, legacy) {
         { protocol: "dns", action: "hijack-dns" },
         { ip_is_private: true, rule_set: ["private-ip"], outbound: "直连" },
         { rule_set: ["ads", "geosite-ads"], action: "reject" },
-        { rule_set: ["cn-domains", "cn-ip"], outbound: "直连" },
+        { rule_set: ["cn-domains", "cn-ip", ...DIRECT_SETS], outbound: "直连" },
         { rule_set: STREAM, outbound: "流媒体" },
         { rule_set: ["ai"], outbound: "AI" },
+        { rule_set: ["games"], outbound: "游戏" },
+        { rule_set: ["crypto"], outbound: "加密货币" },
         { rule_set: ["telegram-sites", "telegram-ip"], outbound: "电报" },
         { rule_set: ["proxy-domains"], outbound: "节点选择" },
       ],
@@ -565,9 +589,12 @@ function buildClash(nodes) {
       "RULE-SET,private-ip,DIRECT,no-resolve",
       "RULE-SET,ads,REJECT",
       "RULE-SET,cn-domains,DIRECT",
+      ...DIRECT_SETS.map((t) => `RULE-SET,${t},DIRECT`),
       "RULE-SET,cn-ip,DIRECT,no-resolve",
       ...STREAM.map((s) => `RULE-SET,${s},流媒体`),
       "RULE-SET,ai,AI",
+      "RULE-SET,games,游戏",
+      "RULE-SET,crypto,加密货币",
       "RULE-SET,telegram-sites,电报",
       "RULE-SET,telegram-ip,电报,no-resolve",
       "RULE-SET,proxy-domains,节点选择",
@@ -751,8 +778,12 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
   L.push(`  domain(geosite:category-ads-all) -> block`);
   L.push(`  dip(geoip:cn) -> direct`);
   L.push(`  domain(geosite:cn) -> direct`);
+  for (const g of ["category-ai-cn", "category-speedtest", "category-games-cn", "category-game-platforms-download", "apple@cn", "microsoft@cn", "google@cn"])
+    L.push(`  domain(geosite:${g}) -> direct`);
   for (const t of STREAM) L.push(`  domain(geosite:${t}) -> ${groupName("Streaming")}`);
   L.push(`  domain(geosite:category-ai-chat-!cn) -> ${groupName("AI")}`);
+  L.push(`  domain(geosite:category-games-!cn) -> Proxy`);
+  L.push(`  domain(geosite:category-cryptocurrency) -> Proxy`);
   L.push(`  domain(geosite:telegram) -> ${groupName("Telegram")}`);
   L.push(`  domain(geosite:geolocation-!cn) -> Proxy`);
   L.push(`  fallback: Proxy`);
