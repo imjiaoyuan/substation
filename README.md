@@ -1,4 +1,4 @@
-# ssub
+# Substation
 
 订阅转换网站，跑在 Cloudflare Workers 上。导入 GitHub 仓库一键部署，打开网页粘贴订阅 → 生成对应内核可直接用的链接或配置，无需任何环境变量。
 
@@ -9,7 +9,7 @@
 | **sing-box**（默认） | Remote 订阅链接 `?url=…`，1.14 格式 | 填进 SFA（sing-box for Android），之后自动更新 |
 | **sing-box 旧版** | `?url=…&v=1.13`，1.11–1.13 兼容格式 | 老版本 sing-box / SFA |
 | **Clash / Mihomo** | `?t=clash`，完整 YAML（含 .mrs rule-set） | `proxy-providers` 填链接，或直接下载整份配置 |
-| **dae** | `?t=dae`，完整 dae 配置（订阅走签名 `/fetch` 链接） | 存为 `/etc/dae/config.d/ssub.dae` 后 reload |
+| **dae** | `?t=dae`，完整 dae 配置（订阅走签名 `/fetch` 链接） | 存为 `/etc/dae/config.d/substation.dae` 后 reload |
 
 ## 功能
 
@@ -41,7 +41,7 @@ https://<worker域名>/?url=<订阅链接urlencode>&t=dae       # dae 配置
 https://<worker域名>/?url=<订阅链接urlencode>&t=dae&static=1   # dae，节点直接内联（不走 /fetch）
 ```
 
-dae 配置存到 `/etc/dae/config.d/ssub.dae`（主配置 `include config.d/*`），`systemctl reload dae` 生效。
+dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.d/*`），`systemctl reload dae` 生效。
 远程订阅首次拉取后缓存到 `persist.d/`，之后断网/订阅挂了也能用缓存起。
 
 > ⚠️ 这是开放转换器：生成的链接请自用——转换链接等同于订阅本身，泄露即泄露节点。自用建议部署自己的实例 + 绑自己的域名 + 设置 `SECRET`。

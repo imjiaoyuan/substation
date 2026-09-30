@@ -23,8 +23,8 @@ const { existsSync } = await import('fs');
 const env = process.env;
 const inputs = { panel: readFileSync(env.PANEL, 'utf8'), uri: readFileSync(env.URIS, 'utf8') };
 if (existsSync(env.FAKE)) inputs.fake = readFileSync(env.FAKE, 'utf8');
-const secret = 'ssub-public-converter';
-const origin = 'https://ssub.example.workers.dev';
+const secret = 'substation-public-converter';
+const origin = 'https://substation.example.workers.dev';
 // /fetch 回环用：自包含的 data: 订阅（seal 进 token，再从 /fetch 解出来），不依赖外网
 const DATA_SUB = `data:text/plain;base64,${Buffer.from('ss://YWVzLTI1Ni1nY206dGVzdC1wYXNzd29yZA==@1.2.3.4:8388#loop-test\n').toString('base64')}`;
 
