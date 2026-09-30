@@ -8,7 +8,8 @@
 const SB_UA = "SFA/1.14.2 (sing-box 1.14.2; Substation)";
 const GH_RAW = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat";
 const STREAM = ["youtube", "netflix", "disney", "spotify", "tiktok"];
-// 直连补充集（除 cn-domains/cn-ip 外）：国内 AI、测速站、国服游戏/游戏下载/加速器、三大家在华可用域名
+// 直连补充集（除 cn-domains/cn-ip 外）：国内 AI、测速站、国服游戏、游戏下载 CDN、三大家在华可用域名
+// 注：这些域名基本不在 geosite:cn / geolocation-!cn 里，不显式列出会被兜底规则送进代理
 const DIRECT_SETS = ["ai-cn", "speedtest", "games-cn", "game-download", "apple-cn", "microsoft-cn", "google-cn"];
 const SING_RULE_SETS = [
   { tag: "ads", url: "https://anti-ad.net/anti-ad-sing-box.srs" },

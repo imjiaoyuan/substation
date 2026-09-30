@@ -16,7 +16,7 @@
 - **网页界面**：粘贴订阅 → 生成链接/配置，一键复制、在线预览节点/分组/流量；自动适配系统深浅色
 - **面板原生配置清洗**：带 sing-box UA 拉订阅，面板返回的 JSON 自动去掉 `//` 注释、适配目标版本字段（`store_rdrc`→`store_dns`、`download_detour`→`http_clients`、新旧 DNS server 格式互转）
 - **URI 列表解析**：base64 / 明文订阅自动识别，支持 `ss` / `vmess` / `vless`(含 reality) / `trojan` / `hysteria2` / `tuic` / `anytls`
-- **完整配置生成**（URI 模式）：分组（节点选择 / 自动选择(urltest) / 流媒体 / AI / 游戏 / 加密货币 / 电报 / 国内）+ 分流 + FakeIP + clash_api + tun/mixed 双入站（dae 为 wan_proxy + 独立 DNS 段）
+- **完整配置生成**（URI 模式）：分组（节点选择 / 自动选择(urltest) / 流媒体 / AI / 游戏 / 加密货币 / 电报 / 直连）+ 分流 + FakeIP + clash_api + tun/mixed 双入站（dae 为 wan_proxy + 独立 DNS 段）
 - **双版本输出**：默认 sing-box 1.14 格式；`&v=1.13` 输出 1.11–1.13 兼容格式
 - **签名订阅（dae）**：`/fetch?s=<token>`，AES-GCM 加密 + 时间戳防篡改，dae 侧用 `https-file://` 订阅（内容缓存到 persist.d，断网可起）；生成配置里不含节点明文
 
@@ -79,16 +79,29 @@ DNS（sing-box/clash）：国内域名走阿里 DoH 直连解析，其余走 Goo
 
 ## 本地验证
 
+仓库不再带测试脚本，改用手动三内核校验（产物需自备一份 URI 订阅）：
+
 ```bash
-./test.sh
-# 生成 10 份产物 + 页面/端点冒烟 + 四内核校验，全过输出 all passed
-# 依赖: node；可选: sing-box 双内核(SB/SB_LEGACY)、mihomo(MIHOMO)、dae(DAE)、python3+pyyaml
-# 默认内核路径: /tmp/sing-box-1.14.2-linux-amd64/sing-box、/tmp/sing-box-1.12.4-linux-amd64/sing-box、/tmp/mihomo、dae
-# 测试输入: ../data/singbox_revx.json（面板样例）、/tmp/sub.txt（URI 样例）、/tmp/sub_fake.txt（可选）
+# 生成四份产物（需自备 /tmp/sub.txt：base64 或明文 URI 订阅，一行一个）
+node --input-type=module -e "
+import {readFileSync,writeFileSync} from 'fs';
+const m = await import('./worker.js');
+const uri = readFileSync('/tmp/sub.txt','utf8');
+writeFileSync('/tmp/c.yaml',(await m.convertTo(uri,'clash')).body);
+writeFileSync('/tmp/s.json',JSON.stringify((await m.convertTo(uri,'singbox')).body));
+writeFileSync('/tmp/s13.json',JSON.stringify((await m.convertTo(uri,'singbox-legacy')).body));
+writeFileSync('/tmp/d.dae',(await m.convertTo(uri,'dae',{origin:'https://x.dev'})).body);
+"
+
+mihomo -t -f /tmp/c.yaml
+sing-box check -c /tmp/s.json             # 1.14
+sing-box check -c /tmp/s13.json           # 1.12/1.13（legacy）
+chmod 600 /tmp/d.dae && dae validate -c /tmp/d.dae
 ```
 
-实测覆盖：`sing-box check`（1.14.2 + 1.12.4）、`mihomo -t`（v1.19.31）、`dae validate`、
-页面 JS（DOM mock 跑 `gen()` 全路径）、`/fetch` 签名订阅解密回环。
+实测覆盖：`sing-box check`（1.14.2 + 1.12.4）、`mihomo -t`（v1.19.31）、`dae validate`（含
+geosite 代码存在性；dae 会去 `/usr/share/dae/geosite.dat` 里逐个查找规则集名，缺哪个会直接报
+`code xxx not found`）。
 
 ## 参考
 
