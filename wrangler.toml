@@ -1,7 +1,3 @@
 name = "ssub"
 main = "worker.js"
 compatibility_date = "2026-09-01"
-
-[vars]
-# 无需配置任何变量
-# SUB_URL = "改成你的订阅链接（也可不配，请求时用 ?url= 传入）"
