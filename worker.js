@@ -1,4 +1,4 @@
-const SB_UA = "SFA/1.14.2 (sing-box 1.14.2; sbsub)";
+const SB_UA = "SFA/1.14.2 (sing-box 1.14.2; ssub)";
 const GH_RAW = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo";
 const STREAM = ["youtube", "netflix", "disney", "spotify", "tiktok"];
 const RULE_SETS = [
