@@ -8,9 +8,9 @@
 const SB_UA = "SFA/1.14.2 (sing-box 1.14.2; Substation)";
 const GH_RAW = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat";
 const STREAM = ["youtube", "netflix", "disney", "spotify", "tiktok"];
-// 直连补充集（除 cn-domains/cn-ip 外）：国内 AI、测速站、国服游戏、游戏下载 CDN、三大家在华可用域名
+// 直连补充集（除 cn-domains/cn-ip 外）：国内 AI、测速站、游戏（含外服）/游戏下载 CDN、三大家在华可用域名
 // 注：这些域名基本不在 geosite:cn / geolocation-!cn 里，不显式列出会被兜底规则送进代理
-const DIRECT_SETS = ["ai-cn", "speedtest", "games-cn", "game-download", "apple-cn", "microsoft-cn", "google-cn"];
+const DIRECT_SETS = ["ai-cn", "speedtest", "games", "game-download", "apple-cn", "microsoft-cn", "google-cn"];
 const SING_RULE_SETS = [
   { tag: "ads", url: "https://anti-ad.net/anti-ad-sing-box.srs" },
   { tag: "geosite-ads", url: `${GH_RAW}/sing/geo/geosite/category-ads-all.srs` },
@@ -20,7 +20,6 @@ const SING_RULE_SETS = [
   { tag: "telegram-ip", url: `${GH_RAW}/sing/geo/geoip/telegram.srs` },
   ...STREAM.map((t) => ({ tag: t, url: `${GH_RAW}/sing/geo/geosite/${t}.srs` })),
   { tag: "games", url: `${GH_RAW}/sing/geo/geosite/category-games-%21cn.srs` },
-  { tag: "games-cn", url: `${GH_RAW}/sing/geo/geosite/category-games-cn.srs` },
   { tag: "game-download", url: `${GH_RAW}/sing/geo/geosite/category-game-platforms-download.srs` },
   { tag: "crypto", url: `${GH_RAW}/sing/geo/geosite/category-cryptocurrency.srs` },
   { tag: "speedtest", url: `${GH_RAW}/sing/geo/geosite/category-speedtest.srs` },
@@ -41,7 +40,6 @@ const CLASH_RULE_SETS = [
   { tag: "telegram-ip", url: `${GH_RAW}/meta/geo/geoip/telegram.mrs`, behavior: "ipcidr" },
   ...STREAM.map((t) => ({ tag: t, url: `${GH_RAW}/meta/geo/geosite/${t}.mrs`, behavior: "domain" })),
   { tag: "games", url: `${GH_RAW}/meta/geo/geosite/category-games-%21cn.mrs`, behavior: "domain" },
-  { tag: "games-cn", url: `${GH_RAW}/meta/geo/geosite/category-games-cn.mrs`, behavior: "domain" },
   { tag: "game-download", url: `${GH_RAW}/meta/geo/geosite/category-game-platforms-download.mrs`, behavior: "domain" },
   { tag: "crypto", url: `${GH_RAW}/meta/geo/geosite/category-cryptocurrency.mrs`, behavior: "domain" },
   { tag: "speedtest", url: `${GH_RAW}/meta/geo/geosite/category-speedtest.mrs`, behavior: "domain" },
@@ -56,7 +54,6 @@ const CLASH_RULE_SETS = [
 const GROUPS = [
   { tag: "流媒体", sets: STREAM },
   { tag: "AI", sets: ["ai"] },
-  { tag: "游戏", sets: ["games"] },
   { tag: "加密货币", sets: ["crypto"] },
   { tag: "电报", sets: ["telegram-sites", "telegram-ip"] },
 ];
@@ -87,6 +84,29 @@ function b64enc(s) {
 
 function stripComments(text) {
   return text.split(/\r?\n/).filter((l) => !l.trim().startsWith("//")).join("\n");
+}
+
+// 去掉 JSON 里的行尾 `//` 注释；按字符串感知扫描，不会误伤 "https://..." 这类字符串内容
+function stripJsonComments(text) {
+  let out = "", inStr = false, esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      out += c;
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; out += c; continue; }
+    if (c === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+      out += "\n";
+      continue;
+    }
+    out += c;
+  }
+  return out;
 }
 
 // /fetch?s=<token> 用：AES-GCM 把订阅 URL 藏进 token（SECRET 环境变量可换密钥）
@@ -181,7 +201,7 @@ function uriToNode(uri) {
     if (plugin) {
       const m = plugin.match(/obfs-local[^;]*;obfs=([^;]+);obfs-host=([^;]+)/) || plugin.match(/simple-obfs[^;]*;obfs=([^;]+);obfs-host=([^;]+)/);
       if (m) { node.plugin = "obfs-local"; node.plugin_opts = `obfs=${m[1]};obfs-host=${m[2]}`; }
-      const v2 = plugin.match(/v2ray-plugin([;论].*)?$/);
+      const v2 = plugin.match(/v2ray-plugin(;.*)?$/);
       if (v2) { node.plugin = "v2ray-plugin"; node.plugin_opts = v2[1] ? v2[1].replace(/^;/, "") : ""; }
     }
     return node;
@@ -409,7 +429,6 @@ function buildConfig(nodes, legacy) {
         { rule_set: ["cn-domains", "cn-ip", ...DIRECT_SETS], outbound: "直连" },
         { rule_set: STREAM, outbound: "流媒体" },
         { rule_set: ["ai"], outbound: "AI" },
-        { rule_set: ["games"], outbound: "游戏" },
         { rule_set: ["crypto"], outbound: "加密货币" },
         { rule_set: ["telegram-sites", "telegram-ip"], outbound: "电报" },
         { rule_set: ["proxy-domains"], outbound: "节点选择" },
@@ -594,7 +613,6 @@ function buildClash(nodes) {
       "RULE-SET,cn-ip,DIRECT,no-resolve",
       ...STREAM.map((s) => `RULE-SET,${s},流媒体`),
       "RULE-SET,ai,AI",
-      "RULE-SET,games,游戏",
       "RULE-SET,crypto,加密货币",
       "RULE-SET,telegram-sites,电报",
       "RULE-SET,telegram-ip,电报,no-resolve",
@@ -779,11 +797,10 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
   L.push(`  domain(geosite:category-ads-all) -> block`);
   L.push(`  dip(geoip:cn) -> direct`);
   L.push(`  domain(geosite:cn) -> direct`);
-  for (const g of ["category-ai-cn", "category-speedtest", "category-games-cn", "category-game-platforms-download", "apple@cn", "microsoft@cn", "google@cn"])
+  for (const g of ["category-ai-cn", "category-speedtest", "category-games-!cn", "category-game-platforms-download", "apple@cn", "microsoft@cn", "google@cn"])
     L.push(`  domain(geosite:${g}) -> direct`);
   for (const t of STREAM) L.push(`  domain(geosite:${t}) -> ${groupName("Streaming")}`);
   L.push(`  domain(geosite:category-ai-chat-!cn) -> ${groupName("AI")}`);
-  L.push(`  domain(geosite:category-games-!cn) -> Proxy`);
   L.push(`  domain(geosite:category-cryptocurrency) -> Proxy`);
   L.push(`  domain(geosite:telegram) -> ${groupName("Telegram")}`);
   L.push(`  domain(geosite:geolocation-!cn) -> Proxy`);
@@ -796,8 +813,10 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
 
 // 返回 { format: "singbox"|"yaml"|"dae", body }
 export async function convertTo(text, target, opts = {}) {
-  const t = stripComments(text).trim();
-  const isPanel = t.startsWith("{") || t.startsWith("[");
+  // 先删整行注释（面板 JSON 常用 // 打头写注释），再判是否面板；只有面板才清行尾 //（URI/base64 不能动）
+  const stripped = stripComments(text).trim();
+  const isPanel = stripped.startsWith("{") || stripped.startsWith("[");
+  const t = isPanel ? stripJsonComments(stripped).trim() : stripped;
   if (target === "singbox" || target === "singbox-legacy") {
     const legacy = target === "singbox-legacy";
     if (isPanel) {

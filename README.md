@@ -16,7 +16,7 @@
 - **网页界面**：粘贴订阅 → 生成链接/配置，一键复制、在线预览节点/分组/流量；自动适配系统深浅色
 - **面板原生配置清洗**：带 sing-box UA 拉订阅，面板返回的 JSON 自动去掉 `//` 注释、适配目标版本字段（`store_rdrc`→`store_dns`、`download_detour`→`http_clients`、新旧 DNS server 格式互转）
 - **URI 列表解析**：base64 / 明文订阅自动识别，支持 `ss` / `vmess` / `vless`(含 reality) / `trojan` / `hysteria2` / `tuic` / `anytls`
-- **完整配置生成**（URI 模式）：分组（节点选择 / 自动选择(urltest) / 流媒体 / AI / 游戏 / 加密货币 / 电报 / 直连）+ 分流 + FakeIP + clash_api + tun/mixed 双入站（dae 为 wan_proxy + 独立 DNS 段）
+- **完整配置生成**（URI 模式）：分组（节点选择 / 自动选择(urltest) / 流媒体 / AI / 加密货币 / 电报 / 直连）+ 分流 + FakeIP + clash_api + tun/mixed 双入站（dae 为 wan_proxy + 独立 DNS 段）
 - **双版本输出**：默认 sing-box 1.14 格式；`&v=1.13` 输出 1.11–1.13 兼容格式
 - **签名订阅（dae）**：`/fetch?s=<token>`，AES-GCM 加密 + 时间戳防篡改，dae 侧用 `https-file://` 订阅（内容缓存到 persist.d，断网可起）；生成配置里不含节点明文
 
@@ -59,9 +59,8 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 | 流媒体 | youtube / netflix / disney / spotify / tiktok → 流媒体组 | 同左 | 同左（按节点名关键词分组） |
 | AI（国外） | `category-ai-chat-!cn` → AI 组 | 同左 | 同左（按节点名关键词分组） |
 | AI（国内） | `category-ai-cn` → 直连 | 同左 | `geosite:category-ai-cn` → direct |
-| 游戏（国外） | `category-games-!cn` → 游戏组 | 同左 | `geosite:category-games-!cn` → Proxy |
-| 游戏（国内/下载） | `category-games-cn` + `-game-platforms-download` → 直连 | 同左 | 同左 → direct |
-| 加密货币 | `category-cryptocurrency` → 加密货币组 | 同左 | `geosite:category-cryptocurrency` → Proxy |
+| 游戏（含外服/国服/下载） | `category-games-!cn` + `-game-platforms-download` → 直连 | 同左 | 同左 → direct |
+| 加密货币 | `category-cryptocurrency` → 加密货币组 | 同左 | `geosite:category-cryptocurrency` → Proxy（dae 无法按分类分组） |
 | 测速 | `category-speedtest` → 直连 | 同左 | `geosite:category-speedtest` → direct |
 | 微软/苹果/谷歌（在华） | `microsoft@cn` + `apple@cn` + `google@cn` → 直连 | 同左 | 同左 → direct |
 | 电报 | `geosite/telegram` + `geoip/telegram` → 电报组 | 同左 | `geosite:telegram`（geoip 行默认注释，见下） |
@@ -70,12 +69,24 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 
 > 国内域名走 `geosite:cn`（11 万+ 域名，v2fly 全量 `@cn`）+ `geoip:cn`，微信/淘宝/抖音/百度/腾讯云/银行等实测全在列，无需额外规则；`category-*-cn` 各分类里不在 `cn` 的域名仅个位数到二十几个（媒体 4 / 影听 22 / 游戏 5 / 网盘 1 / 社交 0）。
 
-匹配优先级：`局域网直连 → 广告 REJECT → 国内直连（含国内 AI/测速/国服游戏/下载/三大家在华域名）→ 流媒体/AI/游戏/加密货币/电报 → 国外代理 → 兜底`。
+匹配优先级：`局域网直连 → 广告 REJECT → 国内直连（含国内 AI/测速/游戏/下载/三大家在华域名）→ 流媒体/AI/加密货币/电报 → 国外代理 → 兜底`。
 DNS（sing-box/clash）：国内域名走阿里 DoH 直连解析，其余走 Google DoH 经代理解析，FakeIP 收尾。
+
+> 规则集均为远程源，默认都从 `raw.githubusercontent.com` 拉（sing-box 22 个 / clash 21 个）。
+> 首次加载需联网下载，之后按 24h 缓存；国内直连拉 GitHub 可能失败，拉空的规则集会退化成
+> “该分类不匹配 → 落到兜底”，不会报错。拉不动的话自行套代理/换镜像。
+
+> **游戏一律直连**（含外服）：想给外服游戏走代理的用户请自备规则/改 `DIRECT_SETS`（外服游戏多在国内被墙，直连是“够用”而非“最优”的默认）。
+> **面板模式不受以上分流影响**：喂 sing-box 面板 JSON 时走 `adaptPanel`，规则沿用面板自带的，只有 URI 模式才会套上这张表。
 
 > dae 的 `dip(geoip:telegram)` 一行默认注释：需要含 telegram 分类的 geoip.dat（dae 官方资产或
 > Loyalsoldier/v2ray-rules-dat）；发行版自带的 v2fly geoip.dat 只有国家代码，开着会报
 > `country code telegram not found`。要启用就换 geoip.dat 再取消注释。
+>
+> dae 的 `geosite:xxx` 同样会去 `/usr/share/dae/geosite.dat` 里逐个查规则集名，缺哪个直接报
+> `code xxx not found` 起不来。本仓库用到 `category-ai-cn` / `category-speedtest` / `category-games-!cn` /
+> `category-game-platforms-download` / `category-cryptocurrency` / `apple@cn` / `microsoft@cn` / `google@cn`
+> 等较新的名字，请确保 geosite.dat 够新（用 dae 官方资产或 Loyalsoldier/v2ray-rules-dat 的最新版）。
 
 ## 本地验证
 
