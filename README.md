@@ -21,6 +21,7 @@
 - **面板原生配置清洗**：带 sing-box UA 拉订阅，面板返回的 JSON 自动去掉 `//` 注释、适配目标版本字段（`store_rdrc`→`store_dns`、`download_detour`→`http_clients`、新旧 DNS server 格式互转）
 - **URI 列表解析**：base64 / 明文订阅自动识别，支持 `ss` / `vmess` / `vless`(含 reality) / `trojan` / `hysteria2` / `tuic` / `anytls`
 - **完整配置生成**（URI 模式）：分组（节点选择 / 自动选择(urltest) / 流媒体 / AI / 加密货币 / 电报 / 直连）+ 分流 + FakeIP + clash_api + tun/mixed 双入站（dae 为 wan_proxy + 独立 DNS 段；Surge/QX 为各自策略组 + 分流段）
+- **AI 分区分组**：节点名含美国/日本标识（emoji 旗帜 / 中文简繁 / 英文全称 / 主要城市 / 词边界两字母缩写）时，AI 组自动派生 `AI-US` / `AI-JP` 子组（urltest 自动选最快）——AI Studio / Gemini / ChatGPT 走美日落地，避开 HK 出口的限制；识别不到地区节点则自动退回普通 AI 组。五种配置输出（sing-box / clash / dae / surge / qx）行为一致，dae 为美日并集单组（dae 组不能嵌套）
 - **双版本输出**：默认 sing-box 1.14 格式；`&v=1.13` 输出 1.11–1.13 兼容格式
 - **协议支持差异**：Surge 不支持 `vless`（跳过并注释说明），支持 ss/vmess/trojan/tuic-v5/hysteria2/anytls；QX 不支持 `vless`/`hysteria2`/`tuic`（跳过并注释说明），支持 ss/vmess/trojan/anytls
 - **签名订阅（dae）**：`/fetch?s=<token>`，AES-GCM 加密 + 时间戳防篡改，dae 侧用 `https-file://` 订阅（内容缓存到 persist.d，断网可起）；生成配置里不含节点明文
@@ -70,7 +71,7 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 | 国内 IP | `geoip/cn` → 直连 | 同左 | `geoip:cn` → direct |
 | 局域网 | `geoip/private` → 直连 | 同左 | `geoip:private` → direct |
 | 流媒体 | youtube / netflix / disney / spotify / tiktok → 流媒体组 | 同左 | 同左（按节点名关键词分组） |
-| AI（国外） | `category-ai-chat-!cn` → AI 组 | 同左 | 同左（按节点名关键词分组） |
+| AI（国外） | `category-ai-chat-!cn` → AI 组（有美/日节点时挂 AI-US / AI-JP 地区子组） | 同左 | 同左（美日并集组） |
 | AI（国内） | `category-ai-cn` → 直连 | 同左 | `geosite:category-ai-cn` → direct |
 | 游戏（含外服/国服/下载） | `category-games-!cn` + `-game-platforms-download` → 直连 | 同左 | 同左 → direct |
 | 加密货币 | `category-cryptocurrency` → 加密货币组 | 同左 | `geosite:category-cryptocurrency` → Proxy（dae 无法按分类分组） |

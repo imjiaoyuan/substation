@@ -89,12 +89,33 @@ const GROUPS = [
   { tag: "加密货币", sets: ["crypto"] },
   { tag: "电报", sets: ["telegram-sites", "telegram-ip"] },
 ];
+// 地区分组：AI 组按地区分层（AI Studio / Gemini / ChatGPT 对 HK 等落地不友好，走美国/日本）。
+// 关键词覆盖机场常见命名：emoji 旗帜 / 中文简繁 / 英文全称 / 主要城市；两字母缩写（us/jp）用词边界匹配，
+// 避免 Australia 命中 "us"、Russia 类误判；dae 的 name(keyword:) 只能子串匹配，生成 dae 时会剔除两字母缩写。
+const REGIONS = {
+  US: ["🇺🇸", "美国", "美國", "united states", "america", "usa", "us", "los angeles", "洛杉矶", "san jose", "圣何塞", "seattle", "西雅图", "dallas", "达拉斯", "chicago", "芝加哥", "new york", "纽约", "phoenix", "凤凰城", "fremont", "硅谷"],
+  JP: ["🇯🇵", "日本", "日本", "japan", "jp", "tokyo", "东京", "東京", "osaka", "大阪"],
+};
+const AI_REGIONS = ["US", "JP"];
+function regionTags(nodes, region) {
+  const words = REGIONS[region];
+  return nodes.filter((n) => {
+    const t = n.tag.toLowerCase();
+    return words.some((k) => {
+      const kw = k.toLowerCase();
+      return /^[a-z]{2}$/.test(kw) ? new RegExp(`(^|[^a-z])${kw}([^a-z]|$)`).test(t) : t.includes(kw);
+    });
+  }).map((n) => n.tag);
+}
+// AI 的地区子组 [{ region, tags }]，没匹配到节点的地区剔除；全空则 AI 退回普通全节点组
+function aiRegionGroups(nodes) {
+  return AI_REGIONS.map((region) => ({ region, tags: regionTags(nodes, region) })).filter((g) => g.tags.length);
+}
 // dae 的组名用 ASCII（配置文件里是标识符）；分组用 name(keyword:) 过滤节点名。
 // keyword 大小写行为未明确，每个词同时给原样 + 全小写两行；多行 filter 是“或”关系。
 const DAE_EXPIRE_FILTER = "!name(keyword: 'ExpireAt:') && !name(keyword: '剩余') && !name(keyword: '到期')";
 const DAE_KEYWORD_GROUPS = [
   { group: "Streaming", keywords: ["YouTube", "Netflix", "Disney", "Spotify", "TikTok", "HBO", "Prime Video", "流媒体"] },
-  { group: "AI", keywords: ["OpenAI", "ChatGPT", "Claude", "Anthropic", "Gemini", "Copilot", "Perplexity"] },
   { group: "Telegram", keywords: ["Telegram", "电报"] },
 ];
 const DEFAULT_SECRET = "substation-public-converter";
@@ -407,6 +428,7 @@ function adaptPanel(cfg, legacy) {
 
 function buildConfig(nodes, legacy) {
   const tags = nodes.map((n) => n.tag);
+  const aiGroups = aiRegionGroups(nodes);
   const dnsServers = legacy
     ? [
         { tag: "dns-proxy", address: "https://8.8.8.8/dns-query", detour: "节点选择" },
@@ -420,7 +442,10 @@ function buildConfig(nodes, legacy) {
         { type: "local", tag: "dns-local" },
         { type: "fakeip", tag: "fakeip", inet4_range: "198.18.0.0/15", inet6_range: "fc00::/18" },
       ];
-  const groupOb = GROUPS.map((g) => ({ type: "selector", tag: g.tag, outbounds: ["节点选择", "自动选择", "直连", ...tags] }));
+  const groupOb = GROUPS.map((g) => {
+    if (g.tag !== "AI" || !aiGroups.length) return { type: "selector", tag: g.tag, outbounds: ["节点选择", "自动选择", "直连", ...tags] };
+    return { type: "selector", tag: g.tag, outbounds: [...aiGroups.map((x) => `AI-${x.region}`), "节点选择", "自动选择", "直连", ...tags] };
+  });
   const cfg = {
     log: { level: "warn", timestamp: true },
     experimental: {
@@ -445,6 +470,7 @@ function buildConfig(nodes, legacy) {
     outbounds: [
       { type: "selector", tag: "节点选择", outbounds: ["自动选择", "直连", ...tags], default: "自动选择" },
       { type: "urltest", tag: "自动选择", outbounds: tags, url: "https://www.gstatic.com/generate_204", interval: "5m", tolerance: 50 },
+      ...aiGroups.map((x) => ({ type: "urltest", tag: `AI-${x.region}`, outbounds: x.tags, url: "https://www.gstatic.com/generate_204", interval: "5m", tolerance: 50 })),
       ...groupOb,
       ...nodes,
       { type: "direct", tag: "直连" },
@@ -603,6 +629,7 @@ function yamlLines(obj, ind) {
 
 function buildClash(nodes, proxiesOnly = false) {
   const tags = nodes.map((n) => n.tag);
+  const aiGroups = aiRegionGroups(nodes);
   const proxies = nodes.map(clashNode).filter(Boolean);
   if (proxiesOnly) return { proxies };
   return {
@@ -637,7 +664,11 @@ function buildClash(nodes, proxiesOnly = false) {
     "proxy-groups": [
       { name: "节点选择", type: "select", proxies: ["自动选择", "DIRECT", ...tags] },
       { name: "自动选择", type: "url-test", proxies: tags, url: "https://www.gstatic.com/generate_204", interval: 300, tolerance: 50 },
-      ...GROUPS.map((g) => ({ name: g.tag, type: "select", proxies: ["节点选择", "自动选择", "DIRECT", ...tags] })),
+      ...GROUPS.map((g) => {
+        if (g.tag !== "AI" || !aiGroups.length) return { name: g.tag, type: "select", proxies: ["节点选择", "自动选择", "DIRECT", ...tags] };
+        return { name: g.tag, type: "select", proxies: [...aiGroups.map((x) => `AI-${x.region}`), "节点选择", "自动选择", "DIRECT", ...tags] };
+      }),
+      ...aiGroups.map((x) => ({ name: `AI-${x.region}`, type: "url-test", proxies: x.tags, url: "https://www.gstatic.com/generate_204", interval: 300, tolerance: 50 })),
     ],
     "rule-providers": Object.fromEntries(CLASH_RULE_SETS.map(({ tag, url, behavior }) => [
       tag, { type: "http", behavior, format: "mrs", url, path: `./ruleset/${tag}.mrs`, interval: 86400 },
@@ -720,6 +751,7 @@ function buildSurge(nodes) {
   const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, r.surge]));
   const hasClude = usable.some(({ n }) => /claude/i.test(n.tag));
   const aiSets = hasClude ? ["ai", "ai-claude"] : ["ai"];
+  const aiGroups = aiRegionGroups(usable.map(({ n }) => n));
   const L = [];
   L.push(`#!MANAGED-CONFIG interval=86400 strict=false`);
   L.push(``);
@@ -738,9 +770,10 @@ function buildSurge(nodes) {
   L.push(`节点选择 = select, 自动选择, DIRECT, ${names.join(", ")}`);
   L.push(`自动选择 = url-test, url=http://www.gstatic.com/generate_204, interval=600, ${names.join(", ")}`);
   for (const g of GROUPS) {
-    if (g.tag === "AI") { L.push(`AI = select, 节点选择, 自动选择, DIRECT, ${names.join(", ")}`); continue; }
+    if (g.tag === "AI" && aiGroups.length) { L.push(`AI = select, ${[...aiGroups.map((x) => `AI-${x.region}`), "节点选择", "自动选择", "DIRECT"].join(", ")}`); continue; }
     L.push(`${g.tag} = select, 节点选择, 自动选择, DIRECT, ${names.join(", ")}`);
   }
+  for (const x of aiGroups) L.push(`AI-${x.region} = url-test, url=http://www.gstatic.com/generate_204, interval=600, ${x.tags.map((t) => surgeName(t)).join(", ")}`);
   L.push(``);
   L.push(`[Rule]`);
   L.push(`RULE-SET,${rs["private-ip"]},DIRECT,no-resolve`);
@@ -807,6 +840,7 @@ function buildQx(nodes) {
   const dropped = nodes.length - usable.length;
   const names = usable.map(({ n }) => qxName(n.tag));
   const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, r.qx]));
+  const aiGroups = aiRegionGroups(usable.map(({ n }) => n));
   const L = [];
   L.push(`[general]`);
   L.push(`server_check_url = http://www.gstatic.com/generate_204`);
@@ -820,7 +854,11 @@ function buildQx(nodes) {
   L.push(`[policy]`);
   L.push(`static = 节点选择, 自动选择, direct, ${names.join(", ")}`);
   L.push(`available = 自动选择, ${names.join(", ")}`);
-  for (const g of GROUPS) L.push(`static = ${g.tag}, 节点选择, 自动选择, direct, ${names.join(", ")}`);
+  for (const g of GROUPS) {
+    if (g.tag === "AI" && aiGroups.length) L.push(`static = AI, ${[...aiGroups.map((x) => `AI-${x.region}`), "节点选择", "自动选择", "direct"].join(", ")}`);
+    else L.push(`static = ${g.tag}, 节点选择, 自动选择, direct, ${names.join(", ")}`);
+  }
+  for (const x of aiGroups) L.push(`available = AI-${x.region}, ${x.tags.map((t) => qxName(t)).join(", ")}`);
   L.push(``);
   L.push(`[server_local]`);
   for (const { n, line } of usable) L.push(`${line}, tag=${qxName(n.tag)}`);
@@ -961,7 +999,10 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
     const words = g.keywords.flatMap((k) => [k, k.toLowerCase()]);
     return nodes.some((n) => words.some((k) => n.tag.toLowerCase().includes(k.toLowerCase())));
   });
-  const groupName = (g) => (usable.some((u) => u.group === g) ? g : "Proxy");
+  // AI 组 = 美国+日本并集（dae 组不能嵌套）；两字母缩写在 dae 里无法词边界匹配，剔除防误伤
+  const aiKeywords = [...new Set(AI_REGIONS.flatMap((r) => REGIONS[r]).filter((k) => !/^[a-z]{2}$/.test(k)).flatMap((k) => [k, k.toLowerCase()]))];
+  const hasAi = nodes.some((n) => aiKeywords.some((k) => n.tag.toLowerCase().includes(k.toLowerCase())));
+  const groupName = (g) => (g === "AI" ? (hasAi ? "AI" : "Proxy") : usable.some((u) => u.group === g) ? g : "Proxy");
   const L = [];
   L.push(`global {`);
   L.push(`  wan_interface: auto`);
@@ -1012,6 +1053,12 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
   } else {
     L.push(`  Proxy {`);
     L.push(`    filter: subtag(sub0)`);
+    L.push(`    policy: min_moving_avg`);
+    L.push(`  }`);
+  }
+  if (hasAi) {
+    L.push(`  AI {`);
+    for (const k of aiKeywords) L.push(`    filter: name(keyword: '${k}') && ${DAE_EXPIRE_FILTER}`);
     L.push(`    policy: min_moving_avg`);
     L.push(`  }`);
   }
