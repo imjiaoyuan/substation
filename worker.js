@@ -89,27 +89,123 @@ const GROUPS = [
   { tag: "加密货币", sets: ["crypto"] },
   { tag: "电报", sets: ["telegram-sites", "telegram-ip"] },
 ];
-// 地区分组：AI 组按地区分层（AI Studio / Gemini / ChatGPT 对 HK 等落地不友好，走美国/日本）。
-// 关键词覆盖机场常见命名：emoji 旗帜 / 中文简繁 / 英文全称 / 主要城市；两字母缩写（us/jp）用词边界匹配，
-// 避免 Australia 命中 "us"、Russia 类误判；dae 的 name(keyword:) 只能子串匹配，生成 dae 时会剔除两字母缩写。
+// 地区分组：AI 组按地区分层（AI Studio / Gemini / ChatGPT 对 HK/MO/CN 落地不友好）。
+// 识别两层：① emoji 旗帜 = 两个 regional indicator 字母，反解即得 ISO 代码（零表覆盖全部国家）；
+// ② 文字关键词（中文简繁 / 英文全称 / 主要城市）+ 两字母缩写（词边界匹配，防 Australia 命中 us）。
+// 可用 URL 参数控制：ai=auto（默认，全部国家，排除港/澳/陆）| ai=US,JP（手动指定）| ai=0（关闭分区）。
 const REGIONS = {
-  US: ["🇺🇸", "美国", "美國", "united states", "america", "usa", "us", "los angeles", "洛杉矶", "san jose", "圣何塞", "seattle", "西雅图", "dallas", "达拉斯", "chicago", "芝加哥", "new york", "纽约", "phoenix", "凤凰城", "fremont", "硅谷"],
-  JP: ["🇯🇵", "日本", "日本", "japan", "jp", "tokyo", "东京", "東京", "osaka", "大阪"],
+  US: { zh: ["美国", "美國"], en: ["united states", "america", "usa"], cities: ["los angeles", "洛杉矶", "san jose", "圣何塞", "seattle", "西雅图", "dallas", "达拉斯", "chicago", "芝加哥", "new york", "纽约", "phoenix", "凤凰城", "fremont", "硅谷"] },
+  JP: { zh: ["日本"], en: ["japan"], cities: ["tokyo", "东京", "東京", "osaka", "大阪"] },
+  SG: { zh: ["新加坡", "狮城"], en: ["singapore"], cities: [] },
+  TW: { zh: ["台湾", "台灣"], en: ["taiwan"], cities: ["taipei", "台北", "新北"] },
+  KR: { zh: ["韩国", "韓國"], en: ["korea"], cities: ["seoul", "首尔", "首爾"] },
+  UK: { zh: ["英国", "英國"], en: ["united kingdom", "britain", "england"], cities: ["london", "伦敦", "倫敦"] },
+  DE: { zh: ["德国", "德國"], en: ["germany"], cities: ["frankfurt", "法兰克福", "法蘭克福", "berlin", "柏林"] },
+  FR: { zh: ["法国", "法國"], en: ["france"], cities: ["paris", "巴黎"] },
+  CA: { zh: ["加拿大"], en: ["canada"], cities: ["toronto", "多伦多", "多倫多", "vancouver", "温哥华", "溫哥華"] },
+  AU: { zh: ["澳大利亚", "澳洲"], en: ["australia"], cities: ["sydney", "悉尼", "melbourne", "墨尔本", "墨爾本"] },
+  IN: { zh: ["印度"], en: ["india"], cities: ["mumbai", "孟买"] },
+  RU: { zh: ["俄罗斯", "俄羅斯"], en: ["russia"], cities: ["moscow", "莫斯科"] },
+  TR: { zh: ["土耳其"], en: ["turkey"], cities: ["istanbul", "伊斯坦布尔"] },
+  BR: { zh: ["巴西"], en: ["brazil"], cities: ["sao paulo", "圣保罗"] },
+  NL: { zh: ["荷兰"], en: ["netherlands"], cities: ["amsterdam", "阿姆斯特丹"] },
+  MY: { zh: ["马来西亚", "馬來西亞"], en: ["malaysia"], cities: ["kuala lumpur", "吉隆坡"] },
+  TH: { zh: ["泰国", "泰國"], en: ["thailand"], cities: ["bangkok", "曼谷"] },
+  VN: { zh: ["越南"], en: ["vietnam"], cities: ["hanoi", "河内", "胡志明"] },
+  PH: { zh: ["菲律宾", "菲律賓"], en: ["philippines"], cities: ["manila", "马尼拉"] },
+  ID: { zh: ["印尼", "印度尼西亚"], en: ["indonesia"], cities: ["jakarta", "雅加达"] },
+  AE: { zh: ["阿联酋", "阿聯酋"], en: ["uae", "united arab emirates"], cities: ["dubai", "迪拜"] },
+  AR: { zh: ["阿根廷"], en: ["argentina"], cities: ["buenos aires"] },
+  IT: { zh: ["意大利", "義大利"], en: ["italy"], cities: ["milan", "米兰", "米蘭", "rome", "罗马"] },
+  ES: { zh: ["西班牙"], en: ["spain"], cities: ["madrid", "马德里"] },
+  MX: { zh: ["墨西哥"], en: ["mexico"], cities: [] },
+  PL: { zh: ["波兰", "波蘭"], en: ["poland"], cities: ["warsaw", "warszawa", "华沙"] },
+  SE: { zh: ["瑞典"], en: ["sweden"], cities: ["stockholm", "斯德哥尔摩"] },
+  CH: { zh: ["瑞士"], en: ["switzerland"], cities: ["zurich", "苏黎世"] },
+  AT: { zh: ["奥地利", "奧地利"], en: ["austria"], cities: ["vienna", "维也纳", "維也納"] },
+  IE: { zh: ["爱尔兰", "愛爾蘭"], en: ["ireland"], cities: ["dublin", "都柏林"] },
+  FI: { zh: ["芬兰"], en: ["finland"], cities: ["helsinki", "赫尔辛基"] },
+  NO: { zh: ["挪威"], en: ["norway"], cities: ["oslo"] },
+  DK: { zh: ["丹麦", "丹麥"], en: ["denmark"], cities: ["copenhagen", "哥本哈根"] },
+  PT: { zh: ["葡萄牙"], en: ["portugal"], cities: ["lisbon", "里斯本"] },
+  CZ: { zh: ["捷克"], en: ["czech"], cities: ["prague", "布拉格"] },
+  UA: { zh: ["乌克兰", "烏克蘭"], en: ["ukraine"], cities: ["kyiv", "kiev", "基辅"] },
+  IL: { zh: ["以色列"], en: ["israel"], cities: ["tel aviv", "特拉维夫"] },
+  ZA: { zh: ["南非"], en: ["south africa"], cities: [] },
+  HK: { zh: ["香港"], en: ["hong kong", "hongkong"], cities: ["hkg"] },
+  MO: { zh: ["澳门", "澳門"], en: ["macao", "macau"], cities: [] },
+  CN: { zh: ["中国", "中國", "大陆", "大陸"], en: ["china"], cities: ["shanghai", "上海", "beijing", "北京"] },
 };
-const AI_REGIONS = ["US", "JP"];
-function regionTags(nodes, region) {
-  const words = REGIONS[region];
-  return nodes.filter((n) => {
-    const t = n.tag.toLowerCase();
-    return words.some((k) => {
-      const kw = k.toLowerCase();
-      return /^[a-z]{2}$/.test(kw) ? new RegExp(`(^|[^a-z])${kw}([^a-z]|$)`).test(t) : t.includes(kw);
-    });
-  }).map((n) => n.tag);
+// 两字母缩写单独存（匹配时用词边界正则；dae 的 name(keyword:) 无法词边界匹配，生成 dae 时剔除）
+const REGION_CODES = {
+  US: ["us"], UK: ["uk", "gb"], KR: ["kr"], JP: ["jp"], SG: ["sg"], HK: ["hk"], TW: ["tw"], MO: ["mo"], CN: ["cn"],
+  MY: ["my"], TH: ["th"], RU: ["ru"], DE: ["de"], FR: ["fr"], NL: ["nl"], TR: ["tr"], BR: ["br"], AU: ["au"], CA: ["ca"],
+  SE: ["se"], CH: ["ch"], PL: ["pl"], NO: ["no"], DK: ["dk"], FI: ["fi"], AT: ["at"], IE: ["ie"], IT: ["it"], ES: ["es"],
+  PT: ["pt"], IL: ["il"], AE: ["ae"], ID: ["id"], VN: ["vn"], PH: ["ph"], MX: ["mx"], UA: ["ua"], ZA: ["za"], AR: ["ar"], CZ: ["cz"], IN: [],
+};
+// 🇬🇧 旗帜反解出 GB，对外统一叫 UK
+const FLAG_ALIAS = { GB: "UK" };
+// AI 不适合的落地
+const AI_EXCLUDE = ["HK", "MO", "CN"];
+// AI 组子组的展示顺序；表外国家（仅旗帜可识别）按字母序排后面
+const REGION_ORDER = ["US", "JP", "SG", "TW", "KR", "UK", "DE", "FR", "CA", "AU", "IN", "RU", "TR", "BR", "NL", "MY", "TH", "VN", "PH", "ID", "AE", "AR", "IT", "ES", "MX", "PL", "SE", "CH", "AT", "IE", "FI", "NO", "DK", "PT", "CZ", "UA", "IL", "ZA"];
+// AI 组在识别不到任何地区节点时的兜底：按节点名里的服务名过滤（老行为）
+const AI_SERVICE_KEYWORDS = ["OpenAI", "ChatGPT", "Claude", "Anthropic", "Gemini", "Copilot", "Perplexity"];
+
+// 机场的信息节点（流量/到期/官网），不参与地区识别（否则「剩余流量：100GB」会命中 GB）
+const NODE_INFO_RE = /(剩余|到期|过期|套餐|重置|流量|官网| expire|traffic|time.*reset|reset.*time)/i;
+// emoji 旗帜 → ISO 代码："🇺🇸" = U+1F1FA(U) + U+1F1F8(S)
+function flagCode(tag) {
+  const m = tag.match(/[\u{1F1E6}-\u{1F1FF}][\u{1F1E6}-\u{1F1FF}]/u);
+  if (!m) return null;
+  const cp = (i) => m[0].codePointAt(i) - 0x1F1E6 + 65;  // 索引 0/2 = 两个 indicator 的码点（1 是代理对低半）
+  return String.fromCodePoint(cp(0)) + String.fromCodePoint(cp(2));
 }
-// AI 的地区子组 [{ region, tags }]，没匹配到节点的地区剔除；全空则 AI 退回普通全节点组
-function aiRegionGroups(nodes) {
-  return AI_REGIONS.map((region) => ({ region, tags: regionTags(nodes, region) })).filter((g) => g.tags.length);
+function wordHit(text, code) {
+  return new RegExp(`(^|[^a-z])${code}([^a-z]|$)`).test(text);
+}
+// 节点名 → 地区代码数组（旗帜优先，其次文字关键词）
+function nodeRegions(tag) {
+  if (NODE_INFO_RE.test(tag)) return [];
+  const flag = flagCode(tag);
+  if (flag) return [FLAG_ALIAS[flag] || flag];
+  const t = tag.toLowerCase();
+  const out = [];
+  for (const [code, w] of Object.entries(REGIONS)) {
+    const hit = [...w.zh, ...w.en, ...w.cities].some((k) => t.includes(k))
+      || (REGION_CODES[code] || []).some((c) => wordHit(t, c));
+    if (hit) out.push(code);
+  }
+  return out;
+}
+// 解析 ai 参数 → 生效地区列表（经「订阅里确有该地区节点」与「排除港/澳/陆」双重过滤，按 REGION_ORDER 排序）
+function resolveAiRegions(nodes, ai) {
+  const detected = new Map();
+  for (const n of nodes) for (const c of nodeRegions(n.tag)) if (!detected.has(c)) detected.set(c, [n.tag]); else detected.get(c).push(n.tag);
+  const p = (ai == null ? "auto" : String(ai)).trim().toLowerCase();
+  let codes;
+  if (["0", "off", "no", "false"].includes(p)) codes = [];
+  else if (p && p !== "auto") codes = p.split(/[,，、\s]+/).map((x) => FLAG_ALIAS[x.toUpperCase()] || x.toUpperCase()).filter(Boolean);
+  else codes = [...detected.keys()];
+  codes = codes.filter((c) => detected.has(c) && !AI_EXCLUDE.includes(c));
+  codes.sort((a, b) => {
+    const ia = REGION_ORDER.indexOf(a), ib = REGION_ORDER.indexOf(b);
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b);
+  });
+  return codes.map((c) => ({ region: c, tags: detected.get(c) }));
+}
+// 兼容旧调用（默认 auto）
+function aiRegionGroups(nodes, ai) {
+  return resolveAiRegions(nodes, ai);
+}
+// dae 用：地区过滤词 = 旗帜 + 中文 + 英文名（name(keyword:) 无词边界，剔除两字母缩写与城市名，保持配置紧凑）
+function daeRegionWords(region) {
+  const w = REGIONS[region];
+  const iso = region === "UK" ? "GB" : region;
+  if (!w) return [String.fromCodePoint(...[...iso].map((ch) => 0x1F1E6 + ch.charCodeAt(0) - 65))];  // 表外国家至少能靠旗帜匹配
+  
+  const flag = String.fromCodePoint(...[...iso].map((ch) => 0x1F1E6 + ch.charCodeAt(0) - 65));
+  return [...new Set([flag, ...w.zh, ...w.en].flatMap((k) => [k, k.toLowerCase()]))];
 }
 // dae 的组名用 ASCII（配置文件里是标识符）；分组用 name(keyword:) 过滤节点名。
 // keyword 大小写行为未明确，每个词同时给原样 + 全小写两行；多行 filter 是“或”关系。
@@ -426,9 +522,9 @@ function adaptPanel(cfg, legacy) {
   return cfg;
 }
 
-function buildConfig(nodes, legacy) {
+function buildConfig(nodes, legacy, ai = "auto") {
   const tags = nodes.map((n) => n.tag);
-  const aiGroups = aiRegionGroups(nodes);
+  const aiGroups = aiRegionGroups(nodes, ai);
   const dnsServers = legacy
     ? [
         { tag: "dns-proxy", address: "https://8.8.8.8/dns-query", detour: "节点选择" },
@@ -627,9 +723,9 @@ function yamlLines(obj, ind) {
   return out;
 }
 
-function buildClash(nodes, proxiesOnly = false) {
+function buildClash(nodes, proxiesOnly = false, ai = "auto") {
   const tags = nodes.map((n) => n.tag);
-  const aiGroups = aiRegionGroups(nodes);
+  const aiGroups = aiRegionGroups(nodes, ai);
   const proxies = nodes.map(clashNode).filter(Boolean);
   if (proxiesOnly) return { proxies };
   return {
@@ -743,7 +839,7 @@ function surgeName(tag) {
   return tag.replace(/,/g, "，");
 }
 
-function buildSurge(nodes) {
+function buildSurge(nodes, ai = "auto") {
   const usable = nodes.map((n) => ({ n, line: surgeKv(n) })).filter((x) => x.line);
   const dropped = nodes.length - usable.length;
   const names = usable.map(({ n }) => surgeName(n.tag));
@@ -751,7 +847,7 @@ function buildSurge(nodes) {
   const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, r.surge]));
   const hasClude = usable.some(({ n }) => /claude/i.test(n.tag));
   const aiSets = hasClude ? ["ai", "ai-claude"] : ["ai"];
-  const aiGroups = aiRegionGroups(usable.map(({ n }) => n));
+  const aiGroups = aiRegionGroups(usable.map(({ n }) => n), ai);
   const L = [];
   L.push(`#!MANAGED-CONFIG interval=86400 strict=false`);
   L.push(``);
@@ -835,12 +931,12 @@ function qxName(tag) {
   return tag.replace(/,/g, "，");
 }
 
-function buildQx(nodes) {
+function buildQx(nodes, ai = "auto") {
   const usable = nodes.map((n) => ({ n, line: qxKv(n) })).filter((x) => x.line);
   const dropped = nodes.length - usable.length;
   const names = usable.map(({ n }) => qxName(n.tag));
   const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, r.qx]));
-  const aiGroups = aiRegionGroups(usable.map(({ n }) => n));
+  const aiGroups = aiRegionGroups(usable.map(({ n }) => n), ai);
   const L = [];
   L.push(`[general]`);
   L.push(`server_check_url = http://www.gstatic.com/generate_204`);
@@ -994,14 +1090,17 @@ async function buildDae(nodes, { origin = "", secret = DEFAULT_SECRET, staticNod
   return buildDaeBody(nodes, { origin, secret, staticNodes, subToken, targetUrl: null });
 }
 
-function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes = false, subToken = null, targetUrl = null } = {}) {
+function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes = false, subToken = null, targetUrl = null, ai = "auto" } = {}) {
   const usable = DAE_KEYWORD_GROUPS.filter((g) => {
     const words = g.keywords.flatMap((k) => [k, k.toLowerCase()]);
     return nodes.some((n) => words.some((k) => n.tag.toLowerCase().includes(k.toLowerCase())));
   });
-  // AI 组 = 美国+日本并集（dae 组不能嵌套）；两字母缩写在 dae 里无法词边界匹配，剔除防误伤
-  const aiKeywords = [...new Set(AI_REGIONS.flatMap((r) => REGIONS[r]).filter((k) => !/^[a-z]{2}$/.test(k)).flatMap((k) => [k, k.toLowerCase()]))];
-  const hasAi = nodes.some((n) => aiKeywords.some((k) => n.tag.toLowerCase().includes(k.toLowerCase())));
+  // AI 组 = 全部可用地区并集（dae 组不能嵌套）；识别不到地区时退回按服务名（OpenAI 等）过滤的旧行为
+  const aiGroups = aiRegionGroups(nodes, ai);
+  const aiWords = [...new Set(aiGroups.flatMap((g) => daeRegionWords(g.region)))];
+  const aiSvc = aiWords.length ? [] : AI_SERVICE_KEYWORDS.flatMap((k) => [k, k.toLowerCase()]);
+  const aiFilterWords = [...aiWords, ...aiSvc];
+  const hasAi = aiFilterWords.length > 0 && nodes.some((n) => aiFilterWords.some((k) => n.tag.toLowerCase().includes(k.toLowerCase())));
   const groupName = (g) => (g === "AI" ? (hasAi ? "AI" : "Proxy") : usable.some((u) => u.group === g) ? g : "Proxy");
   const L = [];
   L.push(`global {`);
@@ -1058,7 +1157,7 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
   }
   if (hasAi) {
     L.push(`  AI {`);
-    for (const k of aiKeywords) L.push(`    filter: name(keyword: '${k}') && ${DAE_EXPIRE_FILTER}`);
+    for (const k of aiFilterWords) L.push(`    filter: name(keyword: '${k}') && ${DAE_EXPIRE_FILTER}`);
     L.push(`    policy: min_moving_avg`);
     L.push(`  }`);
   }
@@ -1097,6 +1196,7 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
 
 // 返回 { format: "singbox"|"yaml"|"dae", body }
 export async function convertTo(text, target, opts = {}) {
+  const ai = opts.ai ?? "auto";
   // 先删整行注释（面板 JSON 常用 // 打头写注释），再判是否面板；只有面板才清行尾 //（URI/base64 不能动）
   const stripped = stripComments(text).trim();
   const isPanel = stripped.startsWith("{") || stripped.startsWith("[");
@@ -1111,7 +1211,7 @@ export async function convertTo(text, target, opts = {}) {
     }
     const nodes = uniqueTags(parseUriList(t));
     if (!nodes.length) throw new Error("订阅中没有可解析的节点");
-    return { format: "singbox", body: buildConfig(nodes, legacy) };
+    return { format: "singbox", body: buildConfig(nodes, legacy, ai) };
   }
   let nodes;
   if (isPanel) {
@@ -1122,15 +1222,15 @@ export async function convertTo(text, target, opts = {}) {
     nodes = uniqueTags(parseUriList(t));
   }
   if (!nodes.length) throw new Error("订阅中没有可解析的节点");
-  if (target === "clash") return { format: "yaml", body: yamlLines(buildClash(nodes, opts.proxiesOnly), 0).join("\n") + "\n" };
-  if (target === "surge") return { format: "conf", body: buildSurge(nodes) };
-  if (target === "qx") return { format: "conf", body: buildQx(nodes) };
+  if (target === "clash") return { format: "yaml", body: yamlLines(buildClash(nodes, opts.proxiesOnly, ai), 0).join("\n") + "\n" };
+  if (target === "surge") return { format: "conf", body: buildSurge(nodes, ai) };
+  if (target === "qx") return { format: "conf", body: buildQx(nodes, ai) };
   if (target === "uri") return { format: "text", body: buildUriList(nodes) };
   if (target === "dae") {
     const { origin = "", secret = DEFAULT_SECRET, staticNodes = false, url = null } = opts;
     let subToken = null;
     if (!staticNodes && origin) subToken = await seal(secret, url || origin);
-    return { format: "dae", body: buildDaeBody(nodes, { origin, secret, staticNodes, subToken, targetUrl: url }) };
+    return { format: "dae", body: buildDaeBody(nodes, { origin, secret, staticNodes, subToken, targetUrl: url, ai }) };
   }
   throw new Error(`unknown target: ${target}`);
 }
@@ -1210,6 +1310,7 @@ footer{margin-top:18px;font-size:12px;color:var(--faint);line-height:1.7}
 <option value="qx">Quantumult X</option>
 <option value="uri">URI 列表（v2rayN/NG、Shadowrocket、Loon 等）</option>
 </select>
+<label class="chk"><input type="checkbox" id="airegion" checked> AI 分区分组（自动识别节点地区，港/澳/陆除外；AI Studio 等走海外落地）</label>
 <button id="genbtn" onclick="gen()">生成</button>
 <div id="out">
 <label>转换后的订阅链接（填进对应客户端的 Remote/订阅）</label>
@@ -1234,7 +1335,7 @@ function gen(){
  var b=document.getElementById('genbtn');
  if(t==='dae'){
   b.disabled=true;b.textContent='生成中…';
-  fetch(base+'/?t=dae&url='+encodeURIComponent(s))
+  fetch(base+'/?t=dae&url='+encodeURIComponent(s)+(document.getElementById('airegion').checked?'':'&ai=0'))
    .then(function(r){return r.text().then(function(x){return{ok:r.ok,txt:x}})})
    .then(function(o){
     b.disabled=false;b.textContent='生成';
@@ -1247,6 +1348,7 @@ function gen(){
   return;
  }
  var u=base+'/?url='+encodeURIComponent(s);
+ if(!document.getElementById('airegion').checked)u+='&ai=0';
  if(t==='sb13')u+='&v=1.13';
  else if(t==='clash')u+='&t=clash';
  else if(t==='surge')u+='&t=surge';
@@ -1345,6 +1447,7 @@ export default {
         secret,
         staticNodes: q.get("static") === "1",
         proxiesOnly: q.get("proxies") === "1",
+        ai: q.get("ai"),
         url: target.replace(/^https-file:/, "https:"),
       });
       const contentType =
