@@ -82,7 +82,12 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 
 > 国内域名走 `geosite:cn`（11 万+ 域名，v2fly 全量 `@cn`）+ `geoip:cn`，微信/淘宝/抖音/百度/腾讯云/银行等实测全在列，无需额外规则；`category-*-cn` 各分类里不在 `cn` 的域名仅个位数到二十几个（媒体 4 / 影听 22 / 游戏 5 / 网盘 1 / 社交 0）。
 
-匹配优先级：`局域网直连 → 广告 REJECT → 国内直连（含国内 AI/测速/游戏/下载/三大家在华域名）→ 流媒体/AI/加密货币/电报 → 国外代理 → 兜底`。
+匹配优先级：`局域网直连 → 广告 REJECT → 国内直连（含国内 AI/测速/游戏/下载/三大家在华域名）→ 境外 QUIC(UDP 443) REJECT → 流媒体/AI/加密货币/电报 → 国外代理 → 兜底`。
+> 境外 UDP 443 reject：浏览器对境外图片/视频优先走 HTTP/3(QUIC)，而境外 UDP 443 常被链路黑洞或
+> 节点不转发 UDP，表现为文字能开、头像图片转圈。显式 reject 让客户端立刻回退 TCP，国内域名不受影响
+> （规则位于国内直连之后）。需要境外 QUIC（如 Google Meet）的话删掉 sing-box 规则里那条
+> `{ network: "udp", port: 443, action: "reject" }` 即可。
+
 DNS（sing-box/clash）：国内域名走阿里 DoH 直连解析，其余走 Google DoH 经代理解析，FakeIP 收尾。
 
 > 规则集均为远程源，默认都从 `raw.githubusercontent.com` 拉（sing-box 22 个 / clash 21 个 / surge 21 个 / qx 20 个）。

@@ -461,6 +461,9 @@ function buildConfig(nodes, legacy) {
         { ip_is_private: true, rule_set: ["private-ip"], outbound: "直连" },
         { rule_set: ["ads", "geosite-ads"], action: "reject" },
         { rule_set: ["cn-domains", "cn-ip", ...DIRECT_SETS], outbound: "直连" },
+        // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → 显式 reject 让浏览器立刻回退 TCP；
+        // 放在国内直连之后，国内 App 的 HTTP/3 不受影响
+        { network: "udp", port: 443, action: "reject" },
         { rule_set: STREAM, outbound: "流媒体" },
         { rule_set: ["ai"], outbound: "AI" },
         { rule_set: ["crypto"], outbound: "加密货币" },
