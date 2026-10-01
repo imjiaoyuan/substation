@@ -31,7 +31,6 @@ const BM7_RULE_SETS = [
   { tag: "speedtest", surge: BM7("Surge", "Speedtest", "Speedtest"), qx: BM7("QuantumultX", "Speedtest", "Speedtest") },
   { tag: "apple-cn", surge: BM7("Surge", "Apple", "Apple"), qx: BM7("QuantumultX", "Apple", "Apple") },
   { tag: "microsoft-cn", surge: BM7("Surge", "Microsoft", "Microsoft"), qx: BM7("QuantumultX", "Microsoft", "Microsoft") },
-  { tag: "google-cn", surge: BM7("Surge", "Google", "Google"), qx: BM7("QuantumultX", "Google", "Google") },
   { tag: "proxy-domains", surge: BM7("Surge", "Global", "Global"), qx: BM7("QuantumultX", "Proxy", "Proxy") },
   { tag: "cn-domains", surge: BM7("Surge", "ChinaMax", "ChinaMax_Domain"), qx: null },
   { tag: "cn-rules", surge: BM7("Surge", "ChinaMax", "ChinaMax"), qx: BM7("QuantumultX", "ChinaMaxNoIP", "ChinaMaxNoIP") },
@@ -41,9 +40,11 @@ const BM7_RULE_SETS = [
 // QX 的 AI 组：meta-rules-dat 的 category-ai-chat-!cn 在 blackmatrix7 拆成了 OpenAI/Claude/Gemini/Copilot
 const QX_AI_TAGS = ["ai", "ai-claude", "ai-gemini", "ai-copilot"];
 // QX 没有域名后缀集格式，cn 主集 ChinaMaxNoIP 自带 HOST 系规则（11 万行）
-// 直连补充集（除 cn-domains/cn-ip 外）：国内 AI、测速站、游戏（含外服）/游戏下载 CDN、三大家在华可用域名
+// 直连补充集（除 cn-domains/cn-ip 外）：国内 AI、测速站、游戏（含外服）/游戏下载 CDN、苹果/微软在华域名
 // 注：这些域名基本不在 geosite:cn / geolocation-!cn 里，不显式列出会被兜底规则送进代理
-const DIRECT_SETS = ["ai-cn", "speedtest", "games", "game-download", "apple-cn", "microsoft-cn", "google-cn"];
+// 谷歌不做 google@cn 直连：v2fly 的 google@cn 含 www.gstatic.com / fonts.gstatic.com 等实际被墙的域名，
+// 直连会导致 YouTube 图标 / AI Studio 静态资源全部超时（gstatic 不在 geosite:cn 里，兜底自动进代理）
+const DIRECT_SETS = ["ai-cn", "speedtest", "games", "game-download", "apple-cn", "microsoft-cn"];
 const SING_RULE_SETS = [
   { tag: "ads", url: "https://anti-ad.net/anti-ad-sing-box.srs" },
   { tag: "geosite-ads", url: `${GH_RAW}/sing/geo/geosite/category-ads-all.srs` },
@@ -58,7 +59,6 @@ const SING_RULE_SETS = [
   { tag: "speedtest", url: `${GH_RAW}/sing/geo/geosite/category-speedtest.srs` },
   { tag: "apple-cn", url: `${GH_RAW}/sing/geo/geosite/apple%40cn.srs` },
   { tag: "microsoft-cn", url: `${GH_RAW}/sing/geo/geosite/microsoft%40cn.srs` },
-  { tag: "google-cn", url: `${GH_RAW}/sing/geo/geosite/google%40cn.srs` },
   { tag: "proxy-domains", url: `${GH_RAW}/sing/geo/geosite/geolocation-%21cn.srs` },
   { tag: "cn-domains", url: `${GH_RAW}/sing/geo/geosite/cn.srs` },
   { tag: "cn-ip", url: `${GH_RAW}/sing/geo/geoip/cn.srs` },
@@ -78,7 +78,6 @@ const CLASH_RULE_SETS = [
   { tag: "speedtest", url: `${GH_RAW}/meta/geo/geosite/category-speedtest.mrs`, behavior: "domain" },
   { tag: "apple-cn", url: `${GH_RAW}/meta/geo/geosite/apple%40cn.mrs`, behavior: "domain" },
   { tag: "microsoft-cn", url: `${GH_RAW}/meta/geo/geosite/microsoft%40cn.mrs`, behavior: "domain" },
-  { tag: "google-cn", url: `${GH_RAW}/meta/geo/geosite/google%40cn.mrs`, behavior: "domain" },
   { tag: "proxy-domains", url: `${GH_RAW}/meta/geo/geosite/geolocation-%21cn.mrs`, behavior: "domain" },
   { tag: "cn-domains", url: `${GH_RAW}/meta/geo/geosite/cn.mrs`, behavior: "domain" },
   { tag: "cn-ip", url: `${GH_RAW}/meta/geo/geoip/cn.mrs`, behavior: "ipcidr" },
@@ -1033,7 +1032,7 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
   L.push(`  domain(geosite:category-ads-all) -> block`);
   L.push(`  dip(geoip:cn) -> direct`);
   L.push(`  domain(geosite:cn) -> direct`);
-  for (const g of ["category-ai-cn", "category-speedtest", "category-games-!cn", "category-game-platforms-download", "apple@cn", "microsoft@cn", "google@cn"])
+  for (const g of ["category-ai-cn", "category-speedtest", "category-games-!cn", "category-game-platforms-download", "apple@cn", "microsoft@cn"])
     L.push(`  domain(geosite:${g}) -> direct`);
   // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → block 让浏览器立刻回退 TCP；放在国内直连之后，国内 App 的 HTTP/3 不受影响
   L.push(`  l4proto(udp) && dport(443) -> block`);

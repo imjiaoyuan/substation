@@ -75,7 +75,8 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 | 游戏（含外服/国服/下载） | `category-games-!cn` + `-game-platforms-download` → 直连 | 同左 | 同左 → direct |
 | 加密货币 | `category-cryptocurrency` → 加密货币组 | 同左 | `geosite:category-cryptocurrency` → Proxy（dae 无法按分类分组） |
 | 测速 | `category-speedtest` → 直连 | 同左 | `geosite:category-speedtest` → direct |
-| 微软/苹果/谷歌（在华） | `microsoft@cn` + `apple@cn` + `google@cn` → 直连 | 同左 | 同左 → direct |
+| 微软/苹果（在华） | `microsoft@cn` + `apple@cn` → 直连 | 同左 | 同左 → direct |
+| 谷歌（全量走代理） | 不设 google@cn 直连——v2fly 该集含 www.gstatic.com / fonts.gstatic.com 等实际被墙域名，直连会导致 YouTube 图标、AI Studio 静态资源全部超时 | 同左 | 同左 |
 | 电报 | `geosite/telegram` + `geoip/telegram` → 电报组 | 同左 | `geosite:telegram`（geoip 行默认注释，见下） |
 | 国外 | `geolocation-!cn` → 节点选择 | 同左 | 同左 |
 | 兜底 | MATCH → 节点选择 | MATCH → 节点选择 | fallback → Proxy |
@@ -103,7 +104,7 @@ DNS（sing-box/clash）：国内域名走阿里 DoH 直连解析，其余走 Goo
 >
 > dae 的 `geosite:xxx` 同样会去 `/usr/share/dae/geosite.dat` 里逐个查规则集名，缺哪个直接报
 > `code xxx not found` 起不来。本仓库用到 `category-ai-cn` / `category-speedtest` / `category-games-!cn` /
-> `category-game-platforms-download` / `category-cryptocurrency` / `apple@cn` / `microsoft@cn` / `google@cn`
+> `category-game-platforms-download` / `category-cryptocurrency` / `apple@cn` / `microsoft@cn`
 > 等较新的名字，请确保 geosite.dat 够新（用 dae 官方资产或 Loyalsoldier/v2ray-rules-dat 的最新版）。
 
 ## 本地验证
