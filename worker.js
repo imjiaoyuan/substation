@@ -1035,6 +1035,8 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
   L.push(`  domain(geosite:cn) -> direct`);
   for (const g of ["category-ai-cn", "category-speedtest", "category-games-!cn", "category-game-platforms-download", "apple@cn", "microsoft@cn", "google@cn"])
     L.push(`  domain(geosite:${g}) -> direct`);
+  // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → block 让浏览器立刻回退 TCP；放在国内直连之后，国内 App 的 HTTP/3 不受影响
+  L.push(`  l4proto(udp) && dport(443) -> block`);
   for (const t of STREAM) L.push(`  domain(geosite:${t}) -> ${groupName("Streaming")}`);
   L.push(`  domain(geosite:category-ai-chat-!cn) -> ${groupName("AI")}`);
   L.push(`  domain(geosite:category-cryptocurrency) -> Proxy`);
