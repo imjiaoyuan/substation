@@ -13,6 +13,15 @@ const GH_RAW = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat";
 const STREAM = ["youtube", "netflix", "disney", "spotify", "tiktok"];
 // Surge / QX 用 blackmatrix7（star 最多、持续维护）；下表 tag 与上面两套对齐，路径形如 <dir>/<file>.list
 const BM7 = (flavor, dir, file) => `https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/${flavor}/${dir}${file ? "/" + file : ""}.list`;
+// —— 规则集镜像反代 ——
+// 两套上游仓库（raw.githubusercontent.com）在国内直连拉取经常失败，失败的规则集退化为「不匹配→兕底」且不报错。
+// RS_PROXY = true 时由本 Worker 的 /rs/ 路径在边缘反代（Cloudflare 边缘国内可达性远好于 raw），
+// 内核侧 update/interval 参数不变，自动更新照旧。拉取失败的请求超时/限流时自动回落到原始 URL。
+const RS_PROXY = false;
+const fixRs = (u, o) => (!u || !RS_PROXY || !o || !u.startsWith("https://raw.githubusercontent.com/")
+  ? u
+  : `${o}/rs/${u.slice("https://raw.githubusercontent.com/".length)}`);
+const rsAll = (sets, o) => sets.map((s) => ({ ...s, url: fixRs(s.url, o) }));
 const BM7_RULE_SETS = [
   { tag: "ads", surge: BM7("Surge", "Advertising", "Advertising"), qx: BM7("QuantumultX", "Advertising", "Advertising") },
   { tag: "ai", surge: BM7("Surge", "OpenAI", "OpenAI"), qx: BM7("QuantumultX", "OpenAI", "OpenAI") },
@@ -45,44 +54,52 @@ const QX_AI_TAGS = ["ai", "ai-claude", "ai-gemini", "ai-copilot"];
 // 谷歌不做 google@cn 直连：v2fly 的 google@cn 含 www.gstatic.com / fonts.gstatic.com 等实际被墙的域名，
 // 直连会导致 YouTube 图标 / AI Studio 静态资源全部超时（gstatic 不在 geosite:cn 里，兜底自动进代理）
 const DIRECT_SETS = ["ai-cn", "speedtest", "games", "game-download", "apple-cn", "microsoft-cn"];
-const SING_RULE_SETS = [
-  { tag: "ads", url: "https://anti-ad.net/anti-ad-sing-box.srs" },
-  { tag: "geosite-ads", url: `${GH_RAW}/sing/geo/geosite/category-ads-all.srs` },
-  { tag: "ai", url: `${GH_RAW}/sing/geo/geosite/category-ai-chat-%21cn.srs` },
-  { tag: "ai-cn", url: `${GH_RAW}/sing/geo/geosite/category-ai-cn.srs` },
-  { tag: "telegram-sites", url: `${GH_RAW}/sing/geo/geosite/telegram.srs` },
-  { tag: "telegram-ip", url: `${GH_RAW}/sing/geo/geoip/telegram.srs` },
-  ...STREAM.map((t) => ({ tag: t, url: `${GH_RAW}/sing/geo/geosite/${t}.srs` })),
-  { tag: "games", url: `${GH_RAW}/sing/geo/geosite/category-games-%21cn.srs` },
-  { tag: "game-download", url: `${GH_RAW}/sing/geo/geosite/category-game-platforms-download.srs` },
-  { tag: "crypto", url: `${GH_RAW}/sing/geo/geosite/category-cryptocurrency.srs` },
-  { tag: "speedtest", url: `${GH_RAW}/sing/geo/geosite/category-speedtest.srs` },
-  { tag: "apple-cn", url: `${GH_RAW}/sing/geo/geosite/apple%40cn.srs` },
-  { tag: "microsoft-cn", url: `${GH_RAW}/sing/geo/geosite/microsoft%40cn.srs` },
-  { tag: "proxy-domains", url: `${GH_RAW}/sing/geo/geosite/geolocation-%21cn.srs` },
-  { tag: "cn-domains", url: `${GH_RAW}/sing/geo/geosite/cn.srs` },
-  { tag: "cn-ip", url: `${GH_RAW}/sing/geo/geoip/cn.srs` },
-  { tag: "private-ip", url: `${GH_RAW}/sing/geo/geoip/private.srs` },
-];
+function makeSingRuleSets(origin = "") {
+  const U = (p) => fixRs(`${GH_RAW}/${p}`, origin); // .srs 规则集；RS_PROXY 开启时经本 Worker /rs/ 反代
+  return [
+  { tag: "ads", url: fixRs("https://anti-ad.net/anti-ad-sing-box.srs", origin) },
+  { tag: "geosite-ads", url: U("sing/geo/geosite/category-ads-all.srs") },
+  { tag: "ai", url: U("sing/geo/geosite/category-ai-chat-%21cn.srs") },
+  { tag: "ai-cn", url: U("sing/geo/geosite/category-ai-cn.srs") },
+  { tag: "telegram-sites", url: U("sing/geo/geosite/telegram.srs") },
+  { tag: "telegram-ip", url: U("sing/geo/geoip/telegram.srs") },
+  ...STREAM.map((t) => ({ tag: t, url: U(`sing/geo/geosite/${t}.srs`) })),
+  { tag: "games", url: U("sing/geo/geosite/category-games-%21cn.srs") },
+  { tag: "game-download", url: U("sing/geo/geosite/category-game-platforms-download.srs") },
+  { tag: "crypto", url: U("sing/geo/geosite/category-cryptocurrency.srs") },
+  { tag: "speedtest", url: U("sing/geo/geosite/category-speedtest.srs") },
+  { tag: "apple-cn", url: U("sing/geo/geosite/apple%40cn.srs") },
+  { tag: "microsoft-cn", url: U("sing/geo/geosite/microsoft%40cn.srs") },
+  { tag: "proxy-domains", url: U("sing/geo/geosite/geolocation-%21cn.srs") },
+  { tag: "cn-domains", url: U("sing/geo/geosite/cn.srs") },
+  { tag: "cn-ip", url: U("sing/geo/geoip/cn.srs") },
+  { tag: "private-ip", url: U("sing/geo/geoip/private.srs") },
+  ];
+}
+const SING_RULE_SETS = makeSingRuleSets(); // 默认（非反代）版本，供需要静态引用的调用方使用
 // Clash(mihomo) 用同一仓库 meta 分支的 .mrs；anti-AD 没有 mrs，广告只留 geosite 一路
-const CLASH_RULE_SETS = [
-  { tag: "ads", url: `${GH_RAW}/meta/geo/geosite/category-ads-all.mrs`, behavior: "domain" },
-  { tag: "ai", url: `${GH_RAW}/meta/geo/geosite/category-ai-chat-%21cn.mrs`, behavior: "domain" },
-  { tag: "ai-cn", url: `${GH_RAW}/meta/geo/geosite/category-ai-cn.mrs`, behavior: "domain" },
-  { tag: "telegram-sites", url: `${GH_RAW}/meta/geo/geosite/telegram.mrs`, behavior: "domain" },
-  { tag: "telegram-ip", url: `${GH_RAW}/meta/geo/geoip/telegram.mrs`, behavior: "ipcidr" },
-  ...STREAM.map((t) => ({ tag: t, url: `${GH_RAW}/meta/geo/geosite/${t}.mrs`, behavior: "domain" })),
-  { tag: "games", url: `${GH_RAW}/meta/geo/geosite/category-games-%21cn.mrs`, behavior: "domain" },
-  { tag: "game-download", url: `${GH_RAW}/meta/geo/geosite/category-game-platforms-download.mrs`, behavior: "domain" },
-  { tag: "crypto", url: `${GH_RAW}/meta/geo/geosite/category-cryptocurrency.mrs`, behavior: "domain" },
-  { tag: "speedtest", url: `${GH_RAW}/meta/geo/geosite/category-speedtest.mrs`, behavior: "domain" },
-  { tag: "apple-cn", url: `${GH_RAW}/meta/geo/geosite/apple%40cn.mrs`, behavior: "domain" },
-  { tag: "microsoft-cn", url: `${GH_RAW}/meta/geo/geosite/microsoft%40cn.mrs`, behavior: "domain" },
-  { tag: "proxy-domains", url: `${GH_RAW}/meta/geo/geosite/geolocation-%21cn.mrs`, behavior: "domain" },
-  { tag: "cn-domains", url: `${GH_RAW}/meta/geo/geosite/cn.mrs`, behavior: "domain" },
-  { tag: "cn-ip", url: `${GH_RAW}/meta/geo/geoip/cn.mrs`, behavior: "ipcidr" },
-  { tag: "private-ip", url: `${GH_RAW}/meta/geo/geoip/private.mrs`, behavior: "ipcidr" },
-];
+function makeClashRuleSets(origin = "") {
+  const U = (p) => fixRs(`${GH_RAW}/${p}`, origin); // .mrs 规则集；RS_PROXY 开启时经本 Worker /rs/ 反代
+  return [
+  { tag: "ads", url: U("meta/geo/geosite/category-ads-all.mrs"), behavior: "domain" },
+  { tag: "ai", url: U("meta/geo/geosite/category-ai-chat-%21cn.mrs"), behavior: "domain" },
+  { tag: "ai-cn", url: U("meta/geo/geosite/category-ai-cn.mrs"), behavior: "domain" },
+  { tag: "telegram-sites", url: U("meta/geo/geosite/telegram.mrs"), behavior: "domain" },
+  { tag: "telegram-ip", url: U("meta/geo/geoip/telegram.mrs"), behavior: "ipcidr" },
+  ...STREAM.map((t) => ({ tag: t, url: U("meta/geo/geosite/${t}.mrs"), behavior: "domain" })),
+  { tag: "games", url: U("meta/geo/geosite/category-games-%21cn.mrs"), behavior: "domain" },
+  { tag: "game-download", url: U("meta/geo/geosite/category-game-platforms-download.mrs"), behavior: "domain" },
+  { tag: "crypto", url: U("meta/geo/geosite/category-cryptocurrency.mrs"), behavior: "domain" },
+  { tag: "speedtest", url: U("meta/geo/geosite/category-speedtest.mrs"), behavior: "domain" },
+  { tag: "apple-cn", url: U("meta/geo/geosite/apple%40cn.mrs"), behavior: "domain" },
+  { tag: "microsoft-cn", url: U("meta/geo/geosite/microsoft%40cn.mrs"), behavior: "domain" },
+  { tag: "proxy-domains", url: U("meta/geo/geosite/geolocation-%21cn.mrs"), behavior: "domain" },
+  { tag: "cn-domains", url: U("meta/geo/geosite/cn.mrs"), behavior: "domain" },
+  { tag: "cn-ip", url: U("meta/geo/geoip/cn.mrs"), behavior: "ipcidr" },
+  { tag: "private-ip", url: U("meta/geo/geoip/private.mrs"), behavior: "ipcidr" },
+  ];
+}
+const CLASH_RULE_SETS = makeClashRuleSets();
 const GROUPS = [
   { tag: "流媒体", sets: STREAM },
   { tag: "AI", sets: ["ai"] },
@@ -522,7 +539,7 @@ function adaptPanel(cfg, legacy) {
   return cfg;
 }
 
-function buildConfig(nodes, legacy, ai = "auto") {
+function buildConfig(nodes, legacy, ai = "auto", origin = "") {
   const tags = nodes.map((n) => n.tag);
   const aiGroups = aiRegionGroups(nodes, ai);
   const dnsServers = legacy
@@ -572,7 +589,7 @@ function buildConfig(nodes, legacy, ai = "auto") {
       { type: "direct", tag: "直连" },
     ],
     route: {
-      rule_set: SING_RULE_SETS.map(({ tag, url }) => ({
+      rule_set: rsAll(SING_RULE_SETS, origin).map(({ tag, url }) => ({
         type: "remote", tag, format: "binary", url, update_interval: "24h",
         ...(legacy ? { download_detour: "直连" } : {}),
       })),
@@ -723,7 +740,7 @@ function yamlLines(obj, ind) {
   return out;
 }
 
-function buildClash(nodes, proxiesOnly = false, ai = "auto") {
+function buildClash(nodes, proxiesOnly = false, ai = "auto", origin = "") {
   const tags = nodes.map((n) => n.tag);
   const aiGroups = aiRegionGroups(nodes, ai);
   const proxies = nodes.map(clashNode).filter(Boolean);
@@ -766,7 +783,7 @@ function buildClash(nodes, proxiesOnly = false, ai = "auto") {
       }),
       ...aiGroups.map((x) => ({ name: `AI-${x.region}`, type: "url-test", proxies: x.tags, url: "https://www.gstatic.com/generate_204", interval: 300, tolerance: 50 })),
     ],
-    "rule-providers": Object.fromEntries(CLASH_RULE_SETS.map(({ tag, url, behavior }) => [
+    "rule-providers": Object.fromEntries(rsAll(CLASH_RULE_SETS, origin).map(({ tag, url, behavior }) => [
       tag, { type: "http", behavior, format: "mrs", url, path: `./ruleset/${tag}.mrs`, interval: 86400 },
     ])),
     rules: [
@@ -841,12 +858,12 @@ function surgeName(tag) {
   return tag.replace(/,/g, "，");
 }
 
-function buildSurge(nodes, ai = "auto") {
+function buildSurge(nodes, ai = "auto", origin = "") {
   const usable = nodes.map((n) => ({ n, line: surgeKv(n) })).filter((x) => x.line);
   const dropped = nodes.length - usable.length;
   const names = usable.map(({ n }) => surgeName(n.tag));
   const nameOf = (n) => surgeName(n.tag);
-  const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, r.surge]));
+  const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, fixRs(r.surge, origin)]));
   const aiSets = ["ai", "ai-claude", "ai-gemini", "ai-copilot"];
   const aiGroups = aiRegionGroups(usable.map(({ n }) => n), ai);
   const L = [];
@@ -935,11 +952,11 @@ function qxName(tag) {
   return tag.replace(/,/g, "，");
 }
 
-function buildQx(nodes, ai = "auto") {
+function buildQx(nodes, ai = "auto", origin = "") {
   const usable = nodes.map((n) => ({ n, line: qxKv(n) })).filter((x) => x.line);
   const dropped = nodes.length - usable.length;
   const names = usable.map(({ n }) => qxName(n.tag));
-  const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, r.qx]));
+  const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, fixRs(r.qx, origin)]));
   const aiGroups = aiRegionGroups(usable.map(({ n }) => n), ai);
   const L = [];
   L.push(`[general]`);
@@ -1096,7 +1113,7 @@ async function buildDae(nodes, { origin = "", secret = DEFAULT_SECRET, staticNod
   return buildDaeBody(nodes, { origin, secret, staticNodes, subToken, targetUrl: null });
 }
 
-function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes = false, subToken = null, targetUrl = null, ai = "auto" } = {}) {
+function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes = false, subToken = null, targetUrl = null, ai = "auto", rsOrigin = "" } = {}) {
   const usable = DAE_KEYWORD_GROUPS.filter((g) => {
     const words = g.keywords.flatMap((k) => [k, k.toLowerCase()]);
     return nodes.some((n) => words.some((k) => n.tag.toLowerCase().includes(k.toLowerCase())));
@@ -1108,6 +1125,8 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
   const aiFilterWords = [...aiWords, ...aiSvc];
   const hasAi = aiFilterWords.length > 0 && nodes.some((n) => aiFilterWords.some((k) => n.tag.toLowerCase().includes(k.toLowerCase())));
   const groupName = (g) => (g === "AI" ? (hasAi ? "AI" : "Proxy") : usable.some((u) => u.group === g) ? g : "Proxy");
+  // geosite 名带 %21/%40 转义：dae 的 domain() 只认字面名（category-games-!cn / apple@cn）
+  const daeSets = (n) => decodeURIComponent(n);
   const L = [];
   L.push(`global {`);
   L.push(`  wan_interface: auto`);
@@ -1184,8 +1203,9 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
   L.push(`  domain(geosite:category-ads-all) -> block`);
   L.push(`  dip(geoip:cn) -> direct`);
   L.push(`  domain(geosite:cn) -> direct`);
-  for (const g of ["category-ai-cn", "category-speedtest", "category-games-!cn", "category-game-platforms-download", "apple@cn", "microsoft@cn"])
-    L.push(`  domain(geosite:${g}) -> direct`);
+  for (const g of ["category-ai-cn", "category-speedtest", "category-game-platforms-download", "apple@cn", "microsoft@cn"])
+    L.push(`  domain(geosite:${daeSets(g)}) -> direct`);
+  L.push(`  domain(geosite:${daeSets("category-games-!cn")}) -> direct`);
   // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → block 让浏览器立刻回退 TCP；放在国内直连之后，国内 App 的 HTTP/3 不受影响
   L.push(`  l4proto(udp) && dport(443) -> block`);
   for (const t of STREAM) L.push(`  domain(geosite:${t}) -> ${groupName("Streaming")}`);
@@ -1217,7 +1237,7 @@ export async function convertTo(text, target, opts = {}) {
     }
     const nodes = uniqueTags(parseUriList(t));
     if (!nodes.length) throw new Error("订阅中没有可解析的节点");
-    return { format: "singbox", body: buildConfig(nodes, legacy, ai) };
+    return { format: "singbox", body: buildConfig(nodes, legacy, ai, opts.origin || "") };
   }
   let nodes;
   if (isPanel) {
@@ -1228,7 +1248,7 @@ export async function convertTo(text, target, opts = {}) {
     nodes = uniqueTags(parseUriList(t));
   }
   if (!nodes.length) throw new Error("订阅中没有可解析的节点");
-  if (target === "clash") return { format: "yaml", body: yamlLines(buildClash(nodes, opts.proxiesOnly, ai), 0).join("\n") + "\n" };
+  if (target === "clash") return { format: "yaml", body: yamlLines(buildClash(nodes, opts.proxiesOnly, ai, opts.origin || ""), 0).join("\n") + "\n" };
   if (target === "surge") return { format: "conf", body: buildSurge(nodes, ai) };
   if (target === "qx") return { format: "conf", body: buildQx(nodes, ai) };
   if (target === "uri") return { format: "text", body: buildUriList(nodes) };
@@ -1236,7 +1256,7 @@ export async function convertTo(text, target, opts = {}) {
     const { origin = "", secret = DEFAULT_SECRET, staticNodes = false, url = null } = opts;
     let subToken = null;
     if (!staticNodes && origin) subToken = await seal(secret, url || origin);
-    return { format: "dae", body: buildDaeBody(nodes, { origin, secret, staticNodes, subToken, targetUrl: url, ai }) };
+    return { format: "dae", body: buildDaeBody(nodes, { origin, secret, staticNodes, subToken, targetUrl: url, ai, rsOrigin: origin }) };
   }
   throw new Error(`unknown target: ${target}`);
 }
@@ -1422,6 +1442,26 @@ export default {
     const q = url.searchParams;
     const origin = `${url.protocol}//${url.host}`;
     const secret = env?.SECRET || DEFAULT_SECRET;
+
+    // 规则集镜像反代：/rs/<repo>/<path> → https://raw.githubusercontent.com/<repo>/<path>
+    // 仅在生成配置时 RS_PROXY=true 才会被内核请求；URL 白名单校验防开放代理
+    if (url.pathname.startsWith("/rs/")) {
+      const rel = url.pathname.slice(4) + url.search;
+      if (!/^MetaCubeX\/meta-rules-dat\//.test(rel) && !/^blackmatrix7\/ios_rule_script\//.test(rel) && !/^anti-ad\.net\//.test(rel)) {
+        return new Response("forbidden\n", { status: 403 });
+      }
+      const upstream = await fetch(rel.startsWith("anti-ad.net/") ? `https://${rel}` : `https://raw.githubusercontent.com/${rel}`, {
+        headers: { "User-Agent": SB_UA },
+        cf: { cacheTtl: 3600, cacheEverything: true },
+      });
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: {
+          "content-type": upstream.headers.get("content-type") || "application/octet-stream",
+          "cache-control": "public, max-age=3600",
+        },
+      });
+    }
 
     if (url.pathname === "/fetch") {
       const target = await unseal(secret, q.get("s") || "").catch(() => null);
