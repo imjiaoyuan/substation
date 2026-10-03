@@ -775,6 +775,8 @@ function buildClash(nodes, proxiesOnly = false, ai = "auto") {
       "RULE-SET,cn-domains,DIRECT",
       ...DIRECT_SETS.map((t) => `RULE-SET,${t},DIRECT`),
       "RULE-SET,cn-ip,DIRECT,no-resolve",
+      // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → 显式 REJECT 让浏览器立刻回退 TCP（与 sing-box/dae 同款）
+      "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT",
       ...STREAM.map((s) => `RULE-SET,${s},流媒体`),
       "RULE-SET,ai,AI",
       "RULE-SET,crypto,加密货币",
