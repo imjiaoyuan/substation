@@ -91,9 +91,12 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 
 匹配优先级：`局域网直连 → 广告 REJECT → 国内直连（含国内 AI/测速/游戏/下载/三大家在华域名）→ 境外 QUIC(UDP 443) REJECT → 流媒体/AI/加密货币/电报 → 国外代理 → 兜底`。
 > 境外 UDP 443 reject：浏览器对境外图片/视频优先走 HTTP/3(QUIC)，而境外 UDP 443 常被链路黑洞或
-> 节点不转发 UDP，表现为文字能开、头像图片转圈。显式 reject 让客户端立刻回退 TCP，国内域名不受影响
-> （规则位于国内直连之后）。需要境外 QUIC（如 Google Meet）的话删掉 sing-box 规则里那条
-> `{ network: "udp", port: 443, action: "reject" }` 即可。
+> 节点不转发 UDP，表现为文字能开、头像图片转圈（典型：v2ex 头像 cdn.v2ex.com，实测 QUIC 握手有去无回、
+> TCP 0.2s 正常）。显式 reject 让客户端立刻回退 TCP，国内域名不受影响（规则位于国内直连之后）。
+> 七种输出全部内置：sing-box `{ network: "udp", port: 443, action: "reject" }`、
+> clash `AND,((NETWORK,UDP),(DST-PORT,443)),REJECT`、surge `AND,((PROTOCOL,UDP),(DEST-PORT,443)),REJECT`、
+> qx `udp_drop_list = QUIC`、dae `l4proto(udp) && dport(443) -> block`。
+> 需要境外 QUIC（如 Google Meet）的话删掉对应内核的那条即可。
 
 DNS（sing-box/clash）：国内域名走阿里 DoH 直连解析，其余走 Google DoH 经代理解析，FakeIP 收尾。
 
