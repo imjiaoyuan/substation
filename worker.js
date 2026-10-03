@@ -1374,6 +1374,7 @@ function cpcfg(b){
  navigator.clipboard.writeText(t).then(function(){b.textContent='已复制 ✓';setTimeout(function(){b.textContent='复制配置'},1500)});
 }
 function prev(b){
+ var esc=function(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
  var l=document.getElementById('link').textContent;
  if(l.indexOf('t=clash')>=0||l.indexOf('t=surge')>=0||l.indexOf('t=qx')>=0||l.indexOf('t=uri')>=0){alert('预览仅支持 sing-box 链接');return}
  b.disabled=true;b.textContent='拉取中…';
@@ -1382,16 +1383,16 @@ function prev(b){
  .then(function(r){var info=r.headers.get('subscription-userinfo')||'';return r.text().then(function(t){return{ok:r.ok,status:r.status,t:t,info:info}})})
  .then(function(o){
   b.disabled=false;b.textContent='预览节点';
-  if(!o.ok){p.innerHTML='<span class="err">失败('+o.status+')：'+o.t.slice(0,200)+'</span>';return}
+  if(!o.ok){p.innerHTML='<span class="err">失败('+o.status+')：'+esc(o.t.slice(0,200))+'</span>';return}
   var j=JSON.parse(o.t),nodes=[],groups=[],pt=['shadowsocks','vmess','vless','trojan','hysteria2','tuic','anytls','hysteria','ssr','wireguard','ssh'];
   j.outbounds.forEach(function(ob){if(pt.indexOf(ob.type)>=0)nodes.push(ob.tag);else groups.push(ob.tag)});
   var line='<span class="ok">共 '+nodes.length+' 个节点</span>';
-  if(o.info)line+=' · '+o.info;
-  line+='<br>分组：'+groups.join(' / ');
-  line+='<br>节点：'+nodes.slice(0,5).join(' / ')+(nodes.length>5?' …':'');
+  if(o.info)line+=' · '+esc(o.info);
+  line+='<br>分组：'+esc(groups.join(' / '));
+  line+='<br>节点：'+esc(nodes.slice(0,5).join(' / '))+(nodes.length>5?' …':'');
   p.innerHTML=line;
  })
- .catch(function(e){b.disabled=false;b.textContent='预览节点';p.innerHTML='<span class="err">'+e+'</span>'});
+ .catch(function(e){b.disabled=false;b.textContent='预览节点';p.innerHTML='<span class="err">'+esc(e)+'</span>'});
 }
 </script>
 </body>
