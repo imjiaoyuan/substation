@@ -69,6 +69,8 @@ function makeSingRuleSets(origin = "") {
   { tag: "telegram-sites", url: U("sing/geo/geosite/telegram.srs") },
   { tag: "telegram-ip", url: U("sing/geo/geoip/telegram.srs") },
   ...STREAM.map((t) => ({ tag: t, url: U(`sing/geo/geosite/${t}.srs`) })),
+  // Netflix 有官方 IP 段（部分 TV 盒子/主机 App 裸 IP 连接，域名规则接不住）；Disney+ 没有对应 geoip 集
+  { tag: "netflix-ip", url: U("sing/geo/geoip/netflix.srs") },
   { tag: "games", url: U("sing/geo/geosite/category-games-%21cn.srs") },
   { tag: "game-download", url: U("sing/geo/geosite/category-game-platforms-download.srs") },
   { tag: "crypto", url: U("sing/geo/geosite/category-cryptocurrency.srs") },
@@ -92,6 +94,7 @@ function makeClashRuleSets(origin = "") {
   { tag: "telegram-sites", url: U("meta/geo/geosite/telegram.mrs"), behavior: "domain" },
   { tag: "telegram-ip", url: U("meta/geo/geoip/telegram.mrs"), behavior: "ipcidr" },
   ...STREAM.map((t) => ({ tag: t, url: U("meta/geo/geosite/${t}.mrs"), behavior: "domain" })),
+  { tag: "netflix-ip", url: U("meta/geo/geoip/netflix.mrs"), behavior: "ipcidr" },
   { tag: "games", url: U("meta/geo/geosite/category-games-%21cn.mrs"), behavior: "domain" },
   { tag: "game-download", url: U("meta/geo/geosite/category-game-platforms-download.mrs"), behavior: "domain" },
   { tag: "crypto", url: U("meta/geo/geosite/category-cryptocurrency.mrs"), behavior: "domain" },
@@ -607,6 +610,8 @@ function buildConfig(nodes, legacy, ai = "auto", origin = "") {
         // steam 商店/社区被墙，但域名包含在 category-games-!cn（上面直连）里 → 后插到代理；
         // 下载 CDN（steamcontent.com 等）不在 STEAM_PROXY_SUFFIXES，仍走直连（国内 CDN 更快）
         { domain_suffix: STEAM_PROXY_SUFFIXES, outbound: "节点选择" },
+        // Netflix 官方 IP 段兜底（TV 盒子/主机 App 有裸 IP 连接，域名规则接不住）
+        { rule_set: ["netflix-ip"], outbound: "流媒体" },
         // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → 显式 reject 让浏览器立刻回退 TCP；
         // 放在国内直连之后，国内 App 的 HTTP/3 不受影响
         { network: "udp", port: 443, action: "reject" },
@@ -802,6 +807,8 @@ function buildClash(nodes, proxiesOnly = false, ai = "auto", origin = "") {
       "RULE-SET,cn-ip,DIRECT,no-resolve",
       // steam 商店/社区被墙，但包含在 games（上面直连）里 → 后插到代理；下载 CDN 仍直连
       ...STEAM_PROXY_SUFFIXES.map((d) => `DOMAIN-SUFFIX,${d},节点选择`),
+      // Netflix 官方 IP 段兜底（TV 盒子/主机 App 有裸 IP 连接，域名规则接不住）
+      "RULE-SET,netflix-ip,流媒体,no-resolve",
       // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → 显式 REJECT 让浏览器立刻回退 TCP（与 sing-box/dae 同款）
       "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT",
       ...STREAM.map((s) => `RULE-SET,${s},流媒体`),
