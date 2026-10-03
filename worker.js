@@ -847,8 +847,7 @@ function buildSurge(nodes, ai = "auto") {
   const names = usable.map(({ n }) => surgeName(n.tag));
   const nameOf = (n) => surgeName(n.tag);
   const rs = Object.fromEntries(BM7_RULE_SETS.map((r) => [r.tag, r.surge]));
-  const hasClude = usable.some(({ n }) => /claude/i.test(n.tag));
-  const aiSets = hasClude ? ["ai", "ai-claude"] : ["ai"];
+  const aiSets = ["ai", "ai-claude", "ai-gemini", "ai-copilot"];
   const aiGroups = aiRegionGroups(usable.map(({ n }) => n), ai);
   const L = [];
   L.push(`#!MANAGED-CONFIG interval=86400 strict=false`);
@@ -879,6 +878,9 @@ function buildSurge(nodes, ai = "auto") {
   L.push(`DOMAIN-SET,${rs["cn-domains"]},DIRECT`);
   L.push(`RULE-SET,${rs["cn-rules"]},DIRECT,no-resolve`);
   for (const s of DIRECT_SETS) if (rs[s]) L.push(`RULE-SET,${rs[s]},DIRECT${s === "speedtest" || s === "games" ? ",no-resolve" : ""}`);
+  // 境外 QUIC 常被链路黑洞或节点 UDP 不通 → 显式 REJECT 让浏览器立刻回退 TCP；PROTOCOL,UDP 同时覆盖 QUIC/STUN。
+  // 位置与其他内核对齐：国内直连之后、流媒体规则之前，否则流媒体/代理域名的 QUIC 会先命中后续规则照走 UDP
+  L.push(`AND,((PROTOCOL,UDP),(DEST-PORT,443)),REJECT`);
   for (const s of STREAM) L.push(`RULE-SET,${rs[s]},流媒体`);
   for (const s of aiSets) L.push(`RULE-SET,${rs[s]},AI`);
   L.push(`RULE-SET,${rs["crypto"]},加密货币`);
