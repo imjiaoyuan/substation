@@ -54,6 +54,11 @@ const QX_AI_TAGS = ["ai", "ai-claude", "ai-gemini", "ai-copilot"];
 // 谷歌不做 google@cn 直连：v2fly 的 google@cn 含 www.gstatic.com / fonts.gstatic.com 等实际被墙的域名，
 // 直连会导致 YouTube 图标 / AI Studio 静态资源全部超时（gstatic 不在 geosite:cn 里，兜底自动进代理）
 const DIRECT_SETS = ["ai-cn", "speedtest", "games", "game-download", "apple-cn", "microsoft-cn"];
+// Steam 商店/社区被墙（store.steampowered.com 自 2021 底 SNI 阻断、steamcommunity.com 长期被墙），
+// 但 v2fly 的 category-games-!cn 包含整个 steam 集 → games 直连会把商店/社区一起带走。
+// 这张表在 games 直连之后前插 → 代理；下载 CDN（steamcontent.com 等）不在表内，仍走直连（国内 CDN 更快）。
+// steamserver.net（P2P 对戀中继）故意不收：代理会增加游戏延迟
+const STEAM_PROXY_SUFFIXES = ["steamcommunity.com", "steampowered.com", "steamstatic.com", "steamusercontent.com", "steam-chat.com", "steam-api.com", "s.team"];
 function makeSingRuleSets(origin = "") {
   const U = (p) => fixRs(`${GH_RAW}/${p}`, origin); // .srs 规则集；RS_PROXY 开启时经本 Worker /rs/ 反代
   return [
@@ -599,6 +604,9 @@ function buildConfig(nodes, legacy, ai = "auto", origin = "") {
         { ip_is_private: true, rule_set: ["private-ip"], outbound: "直连" },
         { rule_set: ["ads", "geosite-ads"], action: "reject" },
         { rule_set: ["cn-domains", "cn-ip", ...DIRECT_SETS], outbound: "直连" },
+        // steam 商店/社区被墙，但域名包含在 category-games-!cn（上面直连）里 → 后插到代理；
+        // 下载 CDN（steamcontent.com 等）不在 STEAM_PROXY_SUFFIXES，仍走直连（国内 CDN 更快）
+        { domain_suffix: STEAM_PROXY_SUFFIXES, outbound: "节点选择" },
         // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → 显式 reject 让浏览器立刻回退 TCP；
         // 放在国内直连之后，国内 App 的 HTTP/3 不受影响
         { network: "udp", port: 443, action: "reject" },
@@ -792,6 +800,8 @@ function buildClash(nodes, proxiesOnly = false, ai = "auto", origin = "") {
       "RULE-SET,cn-domains,DIRECT",
       ...DIRECT_SETS.map((t) => `RULE-SET,${t},DIRECT`),
       "RULE-SET,cn-ip,DIRECT,no-resolve",
+      // steam 商店/社区被墙，但包含在 games（上面直连）里 → 后插到代理；下载 CDN 仍直连
+      ...STEAM_PROXY_SUFFIXES.map((d) => `DOMAIN-SUFFIX,${d},节点选择`),
       // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → 显式 REJECT 让浏览器立刻回退 TCP（与 sing-box/dae 同款）
       "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT",
       ...STREAM.map((s) => `RULE-SET,${s},流媒体`),
@@ -895,6 +905,9 @@ function buildSurge(nodes, ai = "auto", origin = "") {
   L.push(`DOMAIN-SET,${rs["cn-domains"]},DIRECT`);
   L.push(`RULE-SET,${rs["cn-rules"]},DIRECT,no-resolve`);
   for (const s of DIRECT_SETS) if (rs[s]) L.push(`RULE-SET,${rs[s]},DIRECT${s === "speedtest" || s === "games" ? ",no-resolve" : ""}`);
+  // steam 商店/社区被墙，但包含在 games（上面直连）里 → 前插到代理；下载 CDN 仍直连
+  // netflix 裸 IP 无需另加：blackmatrix7 的 Netflix.list 自带 1119 条 IP-CIDR（下面流媒体 RULE-SET 已覆盖）
+  for (const d of STEAM_PROXY_SUFFIXES) L.push(`DOMAIN-SUFFIX,${d},节点选择`);
   // 境外 QUIC 常被链路黑洞或节点 UDP 不通 → 显式 REJECT 让浏览器立刻回退 TCP；PROTOCOL,UDP 同时覆盖 QUIC/STUN。
   // 位置与其他内核对齐：国内直连之后、流媒体规则之前，否则流媒体/代理域名的 QUIC 会先命中后续规则照走 UDP
   L.push(`AND,((PROTOCOL,UDP),(DEST-PORT,443)),REJECT`);
@@ -996,6 +1009,8 @@ function buildQx(nodes, ai = "auto", origin = "") {
   remote("proxy-domains", "节点选择");
   L.push(``);
   L.push(`[filter_local]`);
+  // steam 商店/社区被墙，但包含在 remote 的 games 直连集里 → 本地前插到代理（本地规则在 remote 之后执行）；下载 CDN 仍直连
+  for (const d of STEAM_PROXY_SUFFIXES) L.push(`host-suffix, ${d}, 节点选择`);
   L.push(`geoip, cn, direct`);
   L.push(`final, 节点选择`);
   return L.join("\n") + "\n";
@@ -1205,6 +1220,8 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
   L.push(`  domain(geosite:cn) -> direct`);
   for (const g of ["category-ai-cn", "category-speedtest", "category-game-platforms-download", "apple@cn", "microsoft@cn"])
     L.push(`  domain(geosite:${daeSets(g)}) -> direct`);
+  // steam 商店/社区被墙但随 category-games-!cn 被上面直连带走 → 前插到代理；下载 CDN 不在表内仍直连
+  for (const s of STEAM_PROXY_SUFFIXES) L.push(`  domain(suffix: ${s}) -> Proxy`);
   L.push(`  domain(geosite:${daeSets("category-games-!cn")}) -> direct`);
   // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → block 让浏览器立刻回退 TCP；放在国内直连之后，国内 App 的 HTTP/3 不受影响
   L.push(`  l4proto(udp) && dport(443) -> block`);
