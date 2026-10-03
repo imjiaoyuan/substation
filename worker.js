@@ -547,7 +547,7 @@ function adaptPanel(cfg, legacy) {
   return cfg;
 }
 
-function buildConfig(nodes, legacy, ai = "auto", origin = "") {
+function buildConfig(nodes, legacy, ai = "auto", origin = "", custom = []) {
   const tags = nodes.map((n) => n.tag);
   const aiGroups = aiRegionGroups(nodes, ai);
   const dnsServers = legacy
@@ -612,6 +612,10 @@ function buildConfig(nodes, legacy, ai = "auto", origin = "") {
         { domain_suffix: STEAM_PROXY_SUFFIXES, outbound: "节点选择" },
         // Netflix 官方 IP 段兜底（TV 盒子/主机 App 有裸 IP 连接，域名规则接不住）
         { rule_set: ["netflix-ip"], outbound: "流媒体" },
+        // 用户自定义规则（&rules=，base64）：优先级在兜底/分组规则之前
+        ...custom.map((r) => r.policy === "reject"
+          ? { [r.type.startsWith("IP") ? "ip_cidr" : r.type === "DOMAIN" ? "domain" : r.type === "DOMAIN-SUFFIX" ? "domain_suffix" : "domain_keyword"]: [r.value], action: "reject" }
+          : { [r.type.startsWith("IP") ? "ip_cidr" : r.type === "DOMAIN" ? "domain" : r.type === "DOMAIN-SUFFIX" ? "domain_suffix" : "domain_keyword"]: [r.value], outbound: r.policy === "proxy" ? "节点选择" : "直连" }),
         // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → 显式 reject 让浏览器立刻回退 TCP；
         // 放在国内直连之后，国内 App 的 HTTP/3 不受影响
         { network: "udp", port: 443, action: "reject" },
@@ -753,7 +757,7 @@ function yamlLines(obj, ind) {
   return out;
 }
 
-function buildClash(nodes, proxiesOnly = false, ai = "auto", origin = "") {
+function buildClash(nodes, proxiesOnly = false, ai = "auto", origin = "", custom = []) {
   const tags = nodes.map((n) => n.tag);
   const aiGroups = aiRegionGroups(nodes, ai);
   const proxies = nodes.map(clashNode).filter(Boolean);
@@ -809,6 +813,8 @@ function buildClash(nodes, proxiesOnly = false, ai = "auto", origin = "") {
       ...STEAM_PROXY_SUFFIXES.map((d) => `DOMAIN-SUFFIX,${d},节点选择`),
       // Netflix 官方 IP 段兜底（TV 盒子/主机 App 有裸 IP 连接，域名规则接不住）
       "RULE-SET,netflix-ip,流媒体,no-resolve",
+      // 用户自定义规则（&rules=，base64）
+      ...custom.map((r) => `${r.type},${r.value},${r.policy === "proxy" ? "节点选择" : r.policy === "direct" ? "DIRECT" : "REJECT"}${r.type.startsWith("IP") ? ",no-resolve" : ""}`),
       // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → 显式 REJECT 让浏览器立刻回退 TCP（与 sing-box/dae 同款）
       "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT",
       ...STREAM.map((s) => `RULE-SET,${s},流媒体`),
@@ -875,7 +881,7 @@ function surgeName(tag) {
   return tag.replace(/,/g, "，");
 }
 
-function buildSurge(nodes, ai = "auto", origin = "") {
+function buildSurge(nodes, ai = "auto", custom = [], origin = "") {
   const usable = nodes.map((n) => ({ n, line: surgeKv(n) })).filter((x) => x.line);
   const dropped = nodes.length - usable.length;
   const names = usable.map(({ n }) => surgeName(n.tag));
@@ -915,6 +921,8 @@ function buildSurge(nodes, ai = "auto", origin = "") {
   // steam 商店/社区被墙，但包含在 games（上面直连）里 → 前插到代理；下载 CDN 仍直连
   // netflix 裸 IP 无需另加：blackmatrix7 的 Netflix.list 自带 1119 条 IP-CIDR（下面流媒体 RULE-SET 已覆盖）
   for (const d of STEAM_PROXY_SUFFIXES) L.push(`DOMAIN-SUFFIX,${d},节点选择`);
+  // 用户自定义规则（&rules=，base64）
+  for (const r of custom) L.push(`${r.type},${r.value},${r.policy === "proxy" ? "节点选择" : r.policy === "direct" ? "DIRECT" : "REJECT"}${r.type.startsWith("IP") ? ",no-resolve" : ""}`);
   // 境外 QUIC 常被链路黑洞或节点 UDP 不通 → 显式 REJECT 让浏览器立刻回退 TCP；PROTOCOL,UDP 同时覆盖 QUIC/STUN。
   // 位置与其他内核对齐：国内直连之后、流媒体规则之前，否则流媒体/代理域名的 QUIC 会先命中后续规则照走 UDP
   L.push(`AND,((PROTOCOL,UDP),(DEST-PORT,443)),REJECT`);
@@ -972,7 +980,7 @@ function qxName(tag) {
   return tag.replace(/,/g, "，");
 }
 
-function buildQx(nodes, ai = "auto", origin = "") {
+function buildQx(nodes, ai = "auto", custom = [], origin = "") {
   const usable = nodes.map((n) => ({ n, line: qxKv(n) })).filter((x) => x.line);
   const dropped = nodes.length - usable.length;
   const names = usable.map(({ n }) => qxName(n.tag));
@@ -1018,6 +1026,11 @@ function buildQx(nodes, ai = "auto", origin = "") {
   L.push(`[filter_local]`);
   // steam 商店/社区被墙，但包含在 remote 的 games 直连集里 → 本地前插到代理（本地规则在 remote 之后执行）；下载 CDN 仍直连
   for (const d of STEAM_PROXY_SUFFIXES) L.push(`host-suffix, ${d}, 节点选择`);
+  // 用户自定义规则（&rules=，base64）；QX 无 DOMAIN 裸域名类型，DOMAIN 转后缀
+  for (const r of custom) {
+    const t = r.type === "DOMAIN" ? "host" : r.type === "DOMAIN-SUFFIX" ? "host-suffix" : r.type === "DOMAIN-KEYWORD" ? "host-keyword" : "ip-cidr";
+    L.push(`${t}, ${r.value}, ${r.policy === "proxy" ? "节点选择" : r.policy === "direct" ? "direct" : "reject"}${t === "ip-cidr" ? ", no-dns" : ""}`);
+  }
   L.push(`geoip, cn, direct`);
   L.push(`final, 节点选择`);
   return L.join("\n") + "\n";
@@ -1135,7 +1148,7 @@ async function buildDae(nodes, { origin = "", secret = DEFAULT_SECRET, staticNod
   return buildDaeBody(nodes, { origin, secret, staticNodes, subToken, targetUrl: null });
 }
 
-function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes = false, subToken = null, targetUrl = null, ai = "auto", rsOrigin = "" } = {}) {
+function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes = false, subToken = null, targetUrl = null, ai = "auto", rsOrigin = "", custom = [] } = {}) {
   const usable = DAE_KEYWORD_GROUPS.filter((g) => {
     const words = g.keywords.flatMap((k) => [k, k.toLowerCase()]);
     return nodes.some((n) => words.some((k) => n.tag.toLowerCase().includes(k.toLowerCase())));
@@ -1229,6 +1242,13 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
     L.push(`  domain(geosite:${daeSets(g)}) -> direct`);
   // steam 商店/社区被墙但随 category-games-!cn 被上面直连带走 → 前插到代理；下载 CDN 不在表内仍直连
   for (const s of STEAM_PROXY_SUFFIXES) L.push(`  domain(suffix: ${s}) -> Proxy`);
+  // 用户自定义规则（&rules=，base64）
+  for (const r of custom) {
+    const d = r.type.startsWith("DOMAIN");
+    L.push(r.policy === "reject"
+      ? `  ${d ? `domain(${r.type === "DOMAIN" ? "" : r.type === "DOMAIN-SUFFIX" ? "suffix: " : "keyword: "}${r.value})` : `dip(${r.value})`} -> block`
+      : `  ${d ? `domain(${r.type === "DOMAIN" ? "" : r.type === "DOMAIN-SUFFIX" ? "suffix: " : "keyword: "}${r.value})` : `dip(${r.value})`} -> ${r.policy === "proxy" ? "Proxy" : "direct"}`);
+  }
   L.push(`  domain(geosite:${daeSets("category-games-!cn")}) -> direct`);
   // 境外 QUIC(UDP 443) 常被链路黑洞或节点 UDP 不通 → block 让浏览器立刻回退 TCP；放在国内直连之后，国内 App 的 HTTP/3 不受影响
   L.push(`  l4proto(udp) && dport(443) -> block`);
@@ -1242,11 +1262,42 @@ function buildDaeBody(nodes, { origin = "", secret = DEFAULT_SECRET, staticNodes
   return L.join("\n") + "\n";
 }
 
+// ---------- 自定义规则（&rules=） ----------
+// base64url（b64enc 产物），内容为每行一条（兼容分号分隔）的规则：
+//   DOMAIN-SUFFIX,example.com,代理        # 域名类：DOMAIN / DOMAIN-SUFFIX / DOMAIN-KEYWORD
+//   IP-CIDR,8.8.8.8/32,直连               # IP 类：IP-CIDR / IP-CIDR6（自动 no-resolve）
+//   DOMAIN-KEYWORD,badsite,REJECT
+// 策略别名：代理/PROXY/节点选择 → 主代理；直连/DIRECT → 直连；REJECT/拦截/拒绝/BLOCK → 拒绝
+// 优先级：广告拦截、国内直连之后，流媒体/AI/兜底之前（只覆盖「后续」规则；QX 因本地规则
+// 在 filter_remote 之后执行，只能覆盖 games/国内直连/geoip/final，压不过流媒体/AI 远程集）
+const CUSTOM_RULE_TYPES = ["DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "IP-CIDR", "IP-CIDR6"];
+export function parseCustomRules(b64) {
+  if (!b64) return [];
+  let text;
+  try { text = b64dec(b64); } catch { throw new Error("rules 参数 base64 解码失败"); }
+  const alias = (p) => ({ "代理": "proxy", "proxy": "proxy", "节点选择": "proxy", "直连": "direct", "direct": "direct", "reject": "reject", "拦截": "reject", "拒绝": "reject", "block": "reject" }[p.trim().toLowerCase()] ?? null);
+  const out = [];
+  for (const raw of text.split(/\r?\n|;/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const parts = line.split(",").map((s) => s.trim());
+    if (parts.length < 3) throw new Error(`自定义规则格式错误（应为 类型,值,策略）：${line}`);
+    const [type, value, policyRaw] = parts;
+    if (!CUSTOM_RULE_TYPES.includes(type.toUpperCase())) throw new Error(`不支持的规则类型：${type}（支持 ${CUSTOM_RULE_TYPES.join(" / ")}）`);
+    const policy = alias(policyRaw);
+    if (!policy) throw new Error(`不支持的策略：${policyRaw}（代理 / 直连 / REJECT）`);
+    if (!/^[\w.:\-/]+$/.test(value)) throw new Error(`规则值含非法字符：${value}`);
+    out.push({ type: type.toUpperCase(), value, policy });
+  }
+  return out;
+}
+
 // ---------- 顶层转换入口 ----------
 
 // 返回 { format: "singbox"|"yaml"|"dae", body }
 export async function convertTo(text, target, opts = {}) {
   const ai = opts.ai ?? "auto";
+  const custom = parseCustomRules(opts.custom || "");
   // 先删整行注释（面板 JSON 常用 // 打头写注释），再判是否面板；只有面板才清行尾 //（URI/base64 不能动）
   const stripped = stripComments(text).trim();
   const isPanel = stripped.startsWith("{") || stripped.startsWith("[");
@@ -1261,7 +1312,7 @@ export async function convertTo(text, target, opts = {}) {
     }
     const nodes = uniqueTags(parseUriList(t));
     if (!nodes.length) throw new Error("订阅中没有可解析的节点");
-    return { format: "singbox", body: buildConfig(nodes, legacy, ai, opts.origin || "") };
+    return { format: "singbox", body: buildConfig(nodes, legacy, ai, opts.origin || "", custom) };
   }
   let nodes;
   if (isPanel) {
@@ -1272,15 +1323,15 @@ export async function convertTo(text, target, opts = {}) {
     nodes = uniqueTags(parseUriList(t));
   }
   if (!nodes.length) throw new Error("订阅中没有可解析的节点");
-  if (target === "clash") return { format: "yaml", body: yamlLines(buildClash(nodes, opts.proxiesOnly, ai, opts.origin || ""), 0).join("\n") + "\n" };
-  if (target === "surge") return { format: "conf", body: buildSurge(nodes, ai) };
-  if (target === "qx") return { format: "conf", body: buildQx(nodes, ai) };
+  if (target === "clash") return { format: "yaml", body: yamlLines(buildClash(nodes, opts.proxiesOnly, ai, opts.origin || "", custom), 0).join("\n") + "\n" };
+  if (target === "surge") return { format: "conf", body: buildSurge(nodes, ai, custom, opts.origin || "") };
+  if (target === "qx") return { format: "conf", body: buildQx(nodes, ai, custom, opts.origin || "") };
   if (target === "uri") return { format: "text", body: buildUriList(nodes) };
   if (target === "dae") {
     const { origin = "", secret = DEFAULT_SECRET, staticNodes = false, url = null } = opts;
     let subToken = null;
     if (!staticNodes && origin) subToken = await seal(secret, url || origin);
-    return { format: "dae", body: buildDaeBody(nodes, { origin, secret, staticNodes, subToken, targetUrl: url, ai, rsOrigin: origin }) };
+    return { format: "dae", body: buildDaeBody(nodes, { origin, secret, staticNodes, subToken, targetUrl: url, ai, rsOrigin: origin, custom }) };
   }
   throw new Error(`unknown target: ${target}`);
 }
@@ -1519,6 +1570,7 @@ export default {
         staticNodes: q.get("static") === "1",
         proxiesOnly: q.get("proxies") === "1",
         ai: q.get("ai"),
+        custom: q.get("rules"),
         url: target.replace(/^https-file:/, "https:"),
       });
       const contentType =
