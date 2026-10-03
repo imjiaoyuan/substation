@@ -64,9 +64,19 @@ dae 会因 geosite.dat 缺规则集名报 `code xxx not found`——那是本机
 ## 已知坑（历史教训，别再踩）
 
 - 堵 QUIC 修过三轮才齐（sing-box → dae → clash/surge/qx）：**改规则先 grep 所有 builder**，七产物逐一确认，别只改一个内核。
+- 黑名单规则集想“插队”到另一条规则之前时，**插入位置必须是后者之后**（规则引擎先命中先用）；如 Steam 商店域名包含在 `category-games-!cn`（直连）里，steam→代理行必须写在 games→直连行**之后**。BM7 的 Steam/Game 集也含商店域名，QX 本地规则在 filter_remote 之后执行刚好能压住，Surge 直接顺序生效。
+- 不是所有规则表条目都叫 `url`：BM7 表是 `{tag, surge, qx}`（qx 可为 null，如 ai-cn），MetaCubeX 表才有 `{tag, url, behavior}`——改写函数必须容忍 null 且按字段名处理（rsAll 只认 `url` 曾漏掉整个 Surge/QX）。
+- BM7 的 Netflix.list 自带 1119 条 IP-CIDR，Surge/QX 不需要单独的 netflix-ip 兜底；sing-box/clash（MetaCubeX 集不带 IP 段）才补 geoip/netflix。Disney 没有上游 geoip 资产（.srs/.mrs 均 404），别想当然加。
+- `/rs/` 反代必须白名单（防开放代理），且只给 GitHub 两仓库加 raw 前缀——anti-ad.net 是独立域名，加前缀会 404。
 - Surge 规则集与 README 表格必须一致（AI 拆四个：OpenAI/Claude/Gemini/Copilot）。
 - QX 节点名不允许逗号（`qxName()` 转全角）；Surge 参数值含 `,`/`=` 要加引号（`surgeKv()` 的 `wrap`）。
-- `cdn.v2ex.com` 类案例：域名不在 geosite:cn 也不在 geolocation-!cn，靠兜底进代理——境内不可达的境外域名走 QUIC 黑洞时表现为"文字能开、图片转圈"，先怀疑 UDP 443。
+- `cdn.v2ex.com` 类案例：域名不在 geosite:cn 也不在 geolocation-!cn，靠兜底进代理——境内不可达的境外域名走 QUIC 黑洞时表现为“文字能开、图片转圈”，先怀疑 UDP 443。
+
+## &rules= 自定义规则（B2）
+
+- URL 参数 `rules` 接 base64（b64dec 兼容 url-safe），`parseCustomRules()` 白名单校验：类型仅 DOMAIN/DOMAIN-SUFFIX/DOMAIN-KEYWORD/IP-CIDR/IP-CIDR6，策略仅 代理/直连/REJECT（中英文别名），非法直接抛错（fetch 返回 502）。
+- 渲染位置五内核一致：广告/国内直连（及 steam 代理、netflix-ip）之后、QUIC reject/流媒体之前。注意 QX 的本地规则压不过 filter_remote 的流媒体/AI 集——已在 README 注明此限制。
+- 新增配置项先在 convertTo 解析一次（`const custom = parseCustomRules(opts.custom)`）再分发，别在每个 builder 里重复解析。
 
 ## 参考
 

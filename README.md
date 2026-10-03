@@ -30,6 +30,13 @@
 - **双版本输出**：默认 sing-box 1.14 格式；`&v=1.13` 输出 1.11–1.13 兼容格式
 - **协议支持差异**：Surge 不支持 `vless`（跳过并注释说明），支持 ss/vmess/trojan/tuic-v5/hysteria2/anytls；QX 不支持 `vless`/`hysteria2`/`tuic`（跳过并注释说明），支持 ss/vmess/trojan/anytls
 - **签名订阅（dae）**：`/fetch?s=<token>`，AES-GCM 加密 + 时间戳防篡改，dae 侧用 `https-file://` 订阅（内容缓存到 persist.d，断网可起）；生成配置里不含节点明文
+- **Steam 商店/社区走代理**：`store.steampowered.com`（SNI 阻断）与 `steamcommunity.com`（长期被墙）包含在游戏直连集 `category-games-!cn` 里 → 五内核都在游戏直连之后前插 `STEAM_PROXY_SUFFIXES`（7 个后缀）到主代理；Steam 下载 CDN（steamcontent.com 等）不在表内，保持直连（国内 CDN 更快）
+- **Netflix 裸 IP 兜底**（sing-box/clash）：部分 TV 盒子/主机 App 裸 IP 连接 Netflix，补 `geoip/netflix` → 流媒体组（Disney/Spotify/TikTok 无对应 geoip 集）；Surge/QX 的 blackmatrix7 Netflix.list 自带 1119 条 IP-CIDR，无需另加
+- **规则集镜像反代（默认关）**：`worker.js` 顶部 `RS_PROXY = true` 后，配置里的规则集 URL 从 `raw.githubusercontent.com` 换成 `/rs/…`（本 Worker 边缘拉取，国内可达性远好于 raw）；白名单仅放行 MetaCubeX/meta-rules-dat、blackmatrix7/ios_rule_script、anti-ad.net，内核侧更新参数不变
+- **自定义规则 `&rules=`**：base64（标准或 url-safe），每行一条 `类型,值,策略`（分号分隔亦可，`#` 开头为注释）：
+  - 类型：`DOMAIN` / `DOMAIN-SUFFIX` / `DOMAIN-KEYWORD` / `IP-CIDR` / `IP-CID6`；策略：`代理`/`PROXY`、`直连`/`DIRECT`、`REJECT`/`拦截`（值/类型/策略均校验白名单，非法直接报错）
+  - 例：`DOMAIN-SUFFIX,openai.com,代理` ← `echo -n 'DOMAIN-SUFFIX,openai.com,代理' | base64`
+  - 插入位置：广告拦截与国内直连之后、流媒体/分组/兜底之前；QX 因本地规则在远程集之后执行，只能压过游戏/国内直连/兜底，压不过流媒体/AI 远程集
 
 ## 部署（Cloudflare 导入仓库，3 分钟）
 
@@ -54,6 +61,7 @@ https://<worker域名>/?url=<订阅链接urlencode>&t=dae&static=1   # dae，节
 https://<worker域名>/?url=<订阅链接urlencode>&t=surge     # Surge / Surfboard .conf
 https://<worker域名>/?url=<订阅链接urlencode>&t=qx        # Quantumult X conf
 https://<worker域名>/?url=<订阅链接urlencode>&t=uri       # base64 分享链接列表（v2rayN/NG、Shadowrocket、Loon 等）
+https://<worker域名>/?url=<订阅链接urlencode>&rules=<base64>  # 附加自定义分流规则（五种完整配置通用）
 ```
 
 dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.d/*`），`systemctl reload dae` 生效。
@@ -79,6 +87,7 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 | AI（国外） | `category-ai-chat-!cn` → AI 组（默认按节点地区派生 AI-XX 子组，`&ai=` 可指定/关闭） | 同左 | 同左（全部地区并集组） |
 | AI（国内） | `category-ai-cn` → 直连 | 同左 | `geosite:category-ai-cn` → direct |
 | 游戏（含外服/国服/下载） | `category-games-!cn` + `-game-platforms-download` → 直连 | 同左 | 同左 → direct |
+| Steam 商店/社区（被墙） | 内嵌 `STEAM_PROXY_SUFFIXES` 7 后缀 → 节点选择（游戏直连集含它，后插覆盖） | 同左 | `domain(suffix:…)` → Proxy（games 直连行之前） | Surge/QX 同款内嵌行 |
 | 加密货币 | `category-cryptocurrency` → 加密货币组 | 同左 | `geosite:category-cryptocurrency` → Proxy（dae 无法按分类分组） |
 | 测速 | `category-speedtest` → 直连 | 同左 | `geosite:category-speedtest` → direct |
 | 微软/苹果（在华） | `microsoft@cn` + `apple@cn` → 直连 | 同左 | 同左 → direct |
@@ -89,7 +98,7 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 
 > 国内域名走 `geosite:cn`（11 万+ 域名，v2fly 全量 `@cn`）+ `geoip:cn`，微信/淘宝/抖音/百度/腾讯云/银行等实测全在列，无需额外规则；`category-*-cn` 各分类里不在 `cn` 的域名仅个位数到二十几个（媒体 4 / 影听 22 / 游戏 5 / 网盘 1 / 社交 0）。
 
-匹配优先级：`局域网直连 → 广告 REJECT → 国内直连（含国内 AI/测速/游戏/下载/三大家在华域名）→ 境外 QUIC(UDP 443) REJECT → 流媒体/AI/加密货币/电报 → 国外代理 → 兜底`。
+匹配优先级：`局域网直连 → 广告 REJECT → 国内直连（含国内 AI/测速/游戏/下载/三大家在华域名）→ Steam 商店/社区代理 → Netflix 裸 IP（sing-box/clash）→ 自定义规则(&rules=) → 境外 QUIC(UDP 443) REJECT → 流媒体/AI/加密货币/电报 → 国外代理 → 兜底`。
 > 境外 UDP 443 reject：浏览器对境外图片/视频优先走 HTTP/3(QUIC)，而境外 UDP 443 常被链路黑洞或
 > 节点不转发 UDP，表现为文字能开、头像图片转圈（典型：v2ex 头像 cdn.v2ex.com，实测 QUIC 握手有去无回、
 > TCP 0.2s 正常）。显式 reject 让客户端立刻回退 TCP，国内域名不受影响（规则位于国内直连之后）。
@@ -100,9 +109,10 @@ dae 配置存到 `/etc/dae/config.d/substation.dae`（主配置 `include config.
 
 DNS（sing-box/clash）：国内域名走阿里 DoH 直连解析，其余走 Google DoH 经代理解析，FakeIP 收尾。
 
-> 规则集均为远程源，默认都从 `raw.githubusercontent.com` 拉（sing-box 22 个 / clash 21 个 / surge 21 个 / qx 20 个）。
+> 规则集均为远程源，默认从 `raw.githubusercontent.com` 拉（sing-box / clash 22 个，surge 21 个，qx 20 个）。
 > 首次加载需联网下载，之后按 24h 缓存；国内直连拉 GitHub 可能失败，拉空的规则集会退化成
-> “该分类不匹配 → 落到兜底”，不会报错。拉不动的话自行套代理/换镜像。
+> “该分类不匹配 → 落到兜底”，不会报错。国内设备建议把 `worker.js` 顶部 `RS_PROXY` 改为 `true`，
+> 规则集改走本 Worker 的 `/rs/` 镜像路径（Cloudflare 边缘，带 1h 缓存），内核侧更新参数不变。
 
 > **游戏一律直连**（含外服）：想给外服游戏走代理的用户请自备规则/改 `DIRECT_SETS`（外服游戏多在国内被墙，直连是“够用”而非“最优”的默认）。
 > **面板模式不受以上分流影响**：喂 sing-box 面板 JSON 时走 `adaptPanel`，规则沿用面板自带的，只有 URI 模式才会套上这张表。
