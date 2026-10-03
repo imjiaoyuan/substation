@@ -943,6 +943,8 @@ function buildQx(nodes, ai = "auto") {
   L.push(`[general]`);
   L.push(`server_check_url = http://www.gstatic.com/generate_204`);
   L.push(`dns_exclusion_list = *.cmpassport.com, *.jegotrip.com.cn, *.icitymobile.mobi, id6.me`);
+  // 境外 QUIC 常被链路黑洞或节点 UDP 不通 → 丢包让浏览器立刻回退 TCP；QUIC 关键字不含 DNS，国内域名不受影响
+  L.push(`udp_drop_list = QUIC`);
   L.push(``);
   L.push(`[dns]`);
   L.push(`server = 223.5.5.5`);
